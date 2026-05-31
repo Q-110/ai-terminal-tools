@@ -2,8 +2,6 @@
 package io.github.q110.aiterminaltools.monitor
 
 import com.intellij.diff.DiffContentFactory
-import com.intellij.diff.DiffDialogHints
-import com.intellij.diff.DiffManager
 import com.intellij.diff.requests.SimpleDiffRequest
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
@@ -48,15 +46,7 @@ class AiTurnDiffPresenter(
             }
 
             try {
-                if (requests.size == 1) {
-                    DiffManager.getInstance().showDiff(
-                        project,
-                        requests.first(),
-                        DiffDialogHints.FRAME
-                    )
-                } else {
-                    AiTurnDiffDialog(project, requests).show()
-                }
+                AiTurnDiffDialog(project, requests).show()
             } catch (exception: Throwable) {
                 log.error("Failed to show diff", exception)
                 notify("打开 Diff 窗口失败：${exception.message}", NotificationType.WARNING)
@@ -141,13 +131,12 @@ class AiTurnDiffPresenter(
                 ?.let { base -> runCatching { base.relativize(path).toString() }.getOrNull() }
                 ?: path.toString()
 
-            val fullPath = path.toString()
             SimpleDiffRequest(
                 "AI Terminal 修改：$displayPath",
                 oldContent,
                 newContent,
-                fullPath,
-                fullPath
+                "Before AI turn",
+                "After AI turn"
             )
         }
 
