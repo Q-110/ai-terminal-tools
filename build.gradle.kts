@@ -68,8 +68,11 @@ intellijPlatform {
         """.trimIndent()
         changeNotes = """
             <ul>
-              <li>Adds AI Turn Diff for OpenCode and Claude Code sessions.</li>
+              <li>Adds AI Turn Diff for OpenCode and Claude Code sessions launched from the plugin.</li>
+              <li>Shows files changed in each AI turn in an IntelliJ diff window, isolated by terminal tab and upstream session ID.</li>
               <li>OpenCode turn diffs now use official session lifecycle events to avoid premature diff popups.</li>
+              <li>Restores the AI Turn Diff file selector when multiple files are changed.</li>
+              <li>Updates plugin description, README, and architecture documentation.</li>
             </ul>
         """.trimIndent()
 
