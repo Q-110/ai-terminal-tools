@@ -1,12 +1,30 @@
 # 🚀 AI Terminal Tools
 
-AI Terminal Tools 是一个 JetBrains IDE 插件，为终端、控制台和 Commit 面板提供六类增强功能：文件跳转、点击复制、AI 终端发送、[OpenCode](https://opencode.ai/) / [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) 启动、AI Turn Diff，以及提交信息生成。
+AI Terminal Tools 是一个 JetBrains IDE 插件，面向终端、控制台和 Commit 面板提供增强能力。核心能力包括：文件跳转、点击复制、AI 终端发送、OpenCode / Claude Code 启动、控制台错误发送、AI Turn Diff，以及提交信息生成。
+
+## ⚡ 快速开始
+
+前置条件：
+
+- JetBrains IDE 2025.1+。
+- 已安装 [OpenCode](https://opencode.ai/) 或 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)，并确保 `opencode` 或 `claude` 命令可在系统 `PATH` 中直接运行。
+- 从源码运行或构建插件时需要 JDK 17 和 Gradle Wrapper。
+
+基本流程：
+
+1. 点击 IDE 工具栏的“启动 OpenCode”或“启动 Claude Code”。
+2. 插件会创建新的终端标签页，注入 `AITT_*` 运行环境，并运行 `opencode` 或 `claude`。
+3. 激活目标终端标签页。
+4. 在编辑器、控制台、Diff 或只读查看器中发送选区，或从项目视图、编辑器标签页、Commit 面板发送文件路径。
+5. 通过插件启动的 OpenCode / Claude Code 终端会自动接入 AI Turn Diff，本轮 AI 修改结束后弹出 Diff 窗口。
+
+> AI Turn Diff 只自动接入通过插件按钮启动的 OpenCode / Claude Code 终端。手动启动的终端仍可接收选区和路径发送，但不会自动安装本轮修改监测所需的 hooks/plugin。
 
 ## 📌 功能详解
 
 ### 🔗 文件跳转
 
-将终端输出中的文件引用自动识别为可点击超链接，点击后跳转到 IDE 编辑器中的对应文件位置，支持行号和行范围选中。
+将终端和控制台输出中的文件引用自动识别为可点击超链接，点击后跳转到 IDE 编辑器中的对应文件位置，支持行号和行范围选中。
 
 支持的文件引用格式：
 
@@ -36,69 +54,21 @@ C:\Projects\demo\src\main\java\com\example\ExampleController.java:22
 
 支持的复制模式包括 `{{...}}`、`[[...]]`、函数调用、URL、点号链、引号字符串、标识符和数字。点击复制链接不会占用文件跳转链接的区间，两者互不干扰。
 
-> **说明：** Classic 终端通过鼠标点击检测实现复制，文本无额外样式。
-
-### 🚨 控制台错误发送
-
-Run/Debug Console 中的多语言错误/异常首行会显示发送图标，点击后自动将当前可见错误段发送到当前激活的 Terminal。
-
-发送范围：
-
-- 从错误首行开始，例如 `Caused by: java.net.ConnectException: Connection timed out: connect`、`Traceback (most recent call last):`、`TypeError: ...`、`panic: ...`、`error[E0599]: ...`。
-- 按官方常见输出格式识别 Java/JVM、Python、JavaScript/Node.js、TypeScript、Go、Rust、Ruby 以及 GCC/Clang C/C++ 编译诊断。
-- 包含后续连续的调用栈、traceback、backtrace、编译诊断附属行、源码摘录和插入符定位行。
-- 不包含 `<N folded frames>`、`Disconnected from ...` 或 `Process finished ...` 等非错误内容。
-
-发送格式：
-
-```text
-控制台错误：
--------
-<错误首行和连续错误上下文>
--------
-```
-
-可在 Settings → Tools → AI Terminal Tools 中通过“启用控制台错误发送图标”开关启用或关闭。
+> Classic 终端通过鼠标点击检测实现复制，文本无额外样式。
 
 ### ⚡ AI 终端发送
 
 将 IDE 编辑器中的选区、文件路径或控制台错误发送到当前激活的 Terminal 输入区。目标终端可以是 OpenCode，也可以是 Claude Code。
 
-发送流程：
-
-```text
-IDE 编辑器选区 / 文件路径 / 控制台错误
-      |
-      v
-定位当前 DataContext 或当前激活的 Terminal
-      |
-      v
-写入当前终端输入区
-      |
-      v
-OpenCode 或 Claude Code 接收内容
-```
-
-多行选区和控制台错误使用 bracketed paste 写入，文件路径使用普通输入并自动结束 `@路径` 补全状态。拖拽功能的开关见下方「设置」部分。找不到可写终端时，会提示“请先启动并激活 OpenCode 或 Claude Code 终端。”
-
-快速开始：
-
-1. 点击 IDE 工具栏的“启动 OpenCode”或“启动 Claude Code”。
-2. 插件自动创建新终端标签页，注入 `AITT_*` 运行环境，并分别运行 `opencode` 或 `claude`。
-3. 激活目标终端标签页。
-4. 在编辑器中选中代码，按 `Ctrl+Alt+,` 发送到当前激活终端。
-
-手动启动时，只需要让目标终端标签页保持激活，再执行发送动作即可。
-
 发送选区：
 
 - 快捷键：`Ctrl+Alt+,`
-- 菜单：
+- 菜单入口：
   - 编辑器右键 → 发送选区到 AI Terminal
   - 控制台/Run 输出区右键 → 发送选区到 AI Terminal
   - Diff 对比视图右键 → 发送选区到 AI Terminal
   - 只读文本查看器右键 → 发送选区到 AI Terminal
-- 格式：
+- 发送格式：
 
 ```text
 @src/main/java/A.java:10-20
@@ -113,26 +83,38 @@ OpenCode 或 Claude Code 接收内容
 
 - 项目视图右键、编辑器标签页右键、Commit 面板变更文件列表右键或拖拽到终端，都会发送为 `@displayPath`。
 - 多个文件或文件夹拖拽时，会合并为同一行 `@路径 @路径`，并保留末尾空格以结束补全。
-- 插件仅接管通过“启动 OpenCode”或“启动 Claude Code”创建的 AI 终端。
+- 插件仅接管通过“启动 OpenCode”或“启动 Claude Code”创建的 AI 终端的拖拽发送。
 
-发送控制台错误：
+多行选区和控制台错误使用 bracketed paste 写入，文件路径使用普通输入并自动结束 `@路径` 补全状态。找不到可写终端时，会提示“请先启动并激活 OpenCode 或 Claude Code 终端。”
 
-- 控制台触发：点击异常首行中的发送图标
-- 格式：
+### 🚨 控制台错误发送
+
+Run/Debug Console 中的多语言错误/异常首行会显示发送图标，点击后自动将当前可见错误段发送到当前激活的 Terminal。
+
+发送范围：
+
+- 从错误首行开始，例如 `Caused by: java.net.ConnectException: Connection timed out: connect`、`Traceback (most recent call last):`、`TypeError: ...`、`panic: ...`、`error[E0599]: ...`。
+- 按常见输出格式识别 Java/JVM、Python、JavaScript/Node.js、TypeScript、Go、Rust、Ruby 以及 GCC/Clang C/C++ 编译诊断。
+- 包含后续连续的调用栈、traceback、backtrace、编译诊断附属行、源码摘录和插入符定位行。
+- 不包含 `<N folded frames>`、`Disconnected from ...` 或 `Process finished ...` 等非错误内容。
+
+发送格式：
 
 ```text
 控制台错误：
 -------
-<当前异常段>
+<错误首行和连续错误上下文>
 -------
 ```
+
+可在 Settings → Tools → AI Terminal Tools 中通过“启用控制台错误发送图标”开关启用或关闭。
 
 ### 🧾 AI Turn Diff
 
 通过插件启动 OpenCode 或 Claude Code 后，插件会监测每一轮 AI 对话中的文件修改，并在本轮结束后弹出本轮修改 Diff。
 
-- OpenCode：启动时生成项目级 `.opencode/plugins/ai-terminal-tools.js` 和当前终端专用 launcher。OpenCode plugin 从当前进程环境读取 `AITT_PORT`、`AITT_TOKEN`、`AITT_TAB_ID`，使用 `session.status busy` 作为本轮开始信号，使用 `session.idle` 作为本轮结束信号。
-- Claude Code：启动时生成 `.claude/settings.local.json` hooks 和当前终端专用 launcher，使用 `UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`Stop` / `StopFailure` 维护本轮状态。
+- OpenCode：启动时生成项目级 `.opencode/plugins/ai-terminal-tools.js` 和当前终端专用 launcher。
+- Claude Code：启动时生成 `.claude/settings.local.json` hooks 和当前终端专用 launcher。
 - Diff 内容按 `tabId` 和上游 `sessionID` 隔离，多个 OpenCode / Claude Code 终端同时运行时不会串台。
 - 关闭 Diff 后，可通过 Tools → AI Terminal Tools → Show Last AI Turn Diff 重新打开最近一次结果。
 
@@ -140,7 +122,15 @@ OpenCode 或 Claude Code 接收内容
 
 ### 📝 生成提交信息
 
-Commit 面板工具栏会显示“生成提交信息”动作，点击后使用设置中选择的 OpenCode 或 Claude Code，根据当前 Commit 面板中已勾选的文件生成简要提交信息。提交信息 AI 工具和模型可在下方「设置」部分中配置。
+Commit 面板工具栏会显示“生成提交信息”动作，点击后使用设置中选择的 OpenCode 或 Claude Code，根据当前 Commit 面板中已勾选的文件生成简要提交信息。提交信息 AI 工具和模型可在下方“设置”部分中配置。
+
+## 🧩 兼容性
+
+| 终端引擎 | 适用范围 | 用途 |
+|----------|----------|------|
+| Frontend Terminal | IDE 2025.3+ | 优先使用新版终端 API |
+| Legacy Reworked Terminal | IDE 2025.1 到 2025.2 | 通过反射兼容旧 Reworked Terminal API |
+| Classic Terminal | 回退路径 | 使用 `ShellTerminalWidget` 和 TTY Connector |
 
 ## ⚙️ 设置
 
@@ -153,80 +143,11 @@ Commit 面板工具栏会显示“生成提交信息”动作，点击后使用�
 - 提交信息附加提示词：填写后使用当前内容作为附加提示词。
 - 额外文件扩展名：默认扩展名之外需要识别的扩展名，使用英文分号 `;` 分隔。
 
-## ⌨️ 快捷键
-
-| 动作 | 默认快捷键 | 触发方式 |
-|------|-----------|---------|
-| 发送选区到 AI Terminal | `Ctrl+Alt+,` | 编辑器 / 控制台 / Diff / 只读查看器右键菜单 |
-| 发送文件路径到 AI Terminal | 无 | 项目视图 / 编辑器标签页 / Commit 变更列表右键菜单 / 拖拽 |
-| 发送控制台错误到 AI Terminal | 无 | 控制台异常行图标 |
-| 生成提交信息 | 无 | Commit 面板工具栏 |
-| 启动 OpenCode | 无 | 工具栏按钮 |
-| 启动 Claude Code | 无 | 工具栏按钮 |
-| 显示上次 AI Turn Diff | 无 | Tools → AI Terminal Tools |
-
-## 🧩 项目架构
-
-```text
-src/main/kotlin/io/github/q110/aiterminaltools/
-|
-├── bridge/                                # 桥接通信：终端交互、右键菜单、拖拽
-│   ├── AiTerminalBridgeService.kt         # 核心桥接服务，直接向终端输入区写入内容
-│   ├── FrontendTerminalHelper.kt          # 新版前端终端操作工具
-│   ├── LegacyReworkedTerminalHelper.kt    # 旧版 Reworked 终端引擎操作工具
-│   ├── SendSelectionToAiTerminalAction.kt # Action：发送选中代码到 AI 终端
-│   ├── SendPathToAiTerminalAction.kt      # Action：发送文件/文件夹路径到 AI 终端
-│   ├── StartOpenCodeAction.kt             # Action：启动 OpenCode 终端会话
-│   ├── StartClaudeCodeAction.kt           # Action：启动 Claude Code 终端会话
-│   ├── GenerateCommitMessageAction.kt     # Action：通过 AI 终端生成 Git 提交信息
-│   ├── AiTerminalDropService.kt           # 拖拽服务：将文件拖入终端时自动发送路径
-│   └── AiTerminalToolsMenuRegistrar.kt    # StartupActivity：动态注册右键菜单，初始化服务
-|
-├── filter/                                # 输出过滤：解析终端文本，生成跳转/复制链接
-│   ├── AiTerminalToolsFilter.kt           # 核心 Filter：解析每行输出，生成跳转链接和复制链接
-│   ├── AiTerminalToolsFilterProvider.kt   # 向控制台/终端注册核心 Filter
-│   ├── FilterPatterns.kt                  # 正则常量：文件引用、@路径引用、点击复制模式
-│   └── PathUtils.kt                       # 路径工具：VirtualFile 查找、路径规范化
-|
-├── jump/                                  # 链接跳转：文件/文件夹链接点击处理
-│   ├── FileReferenceHyperlinkInfo.kt      # 文件跳转处理器：点击后定位文件并跳转到指定行
-│   ├── FolderReferenceHyperlinkInfo.kt    # 文件夹跳转处理器：点击后在 Project View 中展开
-│   └── FileChoiceDialog.kt                # 同名文件选择弹窗：多文件匹配时让用户手动选择
-|
-├── copy/                                  # 点击复制
-│   └── CopyTextHyperlinkInfo.kt           # 点击复制处理器：将文本复制到剪贴板并提示
-|
-├── console/                               # 控制台错误处理
-│   ├── ConsoleErrorBlockParser.kt         # 错误块解析器：识别并提取异常/错误堆栈块
-│   └── AiConsoleErrorInlayService.kt      # 错误 Inlay 服务：在错误块旁添加可点击 AI 图标
-|
-├── monitor/                               # AI Turn Diff：回合事件、快照与 Diff 展示
-│   ├── AiTurnEventServer.kt               # 本地 HTTP 服务：接收 OpenCode plugin / Claude hooks 事件
-│   ├── AiTurnMonitorService.kt            # Turn 状态机：按 tabId 和 sessionID 维护本轮修改
-│   ├── AiTurnOpenCodeInstaller.kt         # OpenCode plugin 与 launcher 生成器
-│   ├── AiTurnHookInstaller.kt             # Claude Code hooks 与 launcher 生成器
-│   ├── AiTurnSnapshotService.kt           # 文件修改前快照捕获
-│   ├── AiTurnDiffPresenter.kt             # 构建并展示本轮文件 Diff
-│   ├── AiTurnDiffDialog.kt                # 多文件 Diff 窗口
-│   └── ShowLastAiTurnDiffAction.kt        # 重新打开最近一次 AI Turn Diff
-|
-└── settings/                              # 插件配置
-    ├── AiTerminalToolsSettings.kt         # 配置持久化：存储到 ai-terminal-tools.xml
-    └── AiTerminalToolsConfigurable.kt     # 设置面板 UI：各功能开关
-```
-
-终端兼容层：
-
-- Frontend：IDE 2025.3+ 使用 `TerminalToolWindowTabsManager`。
-- Legacy Reworked：IDE 2025.1 到 2025.2 通过反射调用旧 Reworked Terminal API。
-- OpenCode：IDE 2025.1 到 2025.2 使用 Classic Terminal 启动，避免旧 Reworked Terminal 显示异常。
-- Classic：回退到 `ShellTerminalWidget` 和 TTY Connector。
-
 ## 🛠️ 构建与运行
 
 环境要求：
 
-- [IntelliJ IDEA Ultimate 2025.1+](https://www.jetbrains.com/idea/download/)，或通过 `-P` 参数切换 IDE 类型和版本。
+- JetBrains IDE 2025.1+，或通过 `-P` 参数切换 IDE 类型和版本。
 - [JDK 17](https://www.jetbrains.com/help/idea/sdk.html)。
 - [Gradle Wrapper](https://docs.gradle.org/current/userguide/gradle_wrapper.html)。
 
@@ -238,6 +159,10 @@ src/main/kotlin/io/github/q110/aiterminaltools/
 .\gradlew.bat runIde "-PplatformVersion=2025.3" "-PplatformType=IU"
 .\gradlew.bat buildPlugin
 ```
+
+## 📚 开发者文档
+
+项目结构、终端兼容层、OpenCode plugin 和 Claude Code hooks 的实现说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ## ℹ️ 插件信息
 

@@ -55,15 +55,15 @@ intellijPlatform {
         name = "AI Terminal Tools"
         version = project.version.toString()
         description = """
-            <p>AI Terminal Tools enhances JetBrains IDE terminals and consoles with fast navigation, click-to-copy, AI terminal sending, OpenCode / Claude Code launch actions, AI Turn Diff, and commit message generation.</p>
+            <p>AI Terminal Tools enhances JetBrains IDE terminals, consoles, and the Commit panel with fast navigation, click-to-copy, AI terminal sending, OpenCode / Claude Code launch actions, AI Turn Diff, and commit message generation.</p>
+            <p>Designed for JetBrains IDEs 2025.1+ and compatible with Frontend, Reworked, and Classic terminal paths.</p>
             <ul>
-              <li>File navigation: turns terminal and console file references into clickable links, including short file names, relative/absolute paths, line numbers, and line ranges. Uses IntelliJ project index for accurate matching across all project types.</li>
-              <li>Click-to-copy: recognizes structured terminal output fragments such as method calls, API paths, dotted identifiers, strings, numbers, and URLs, then copies them to the clipboard with one click. Works across Classic, Reworked, and Frontend terminal engines.</li>
-              <li>Console error sending: adds an inline AI terminal icon to multi-language exception lines (Java, Python, JS/TS, Go, Rust, Ruby, C/C++) and sends the current visible error segment to the active terminal.</li>
-              <li>AI terminal bridge: sends editor selections, project tree file/folder paths, editor tab paths, and dragged files to the active terminal input area, including support for completing @path input state.</li>
-              <li>Launch actions: starts OpenCode or Claude Code in dedicated terminal tabs.</li>
-              <li>AI Turn Diff: shows the files changed by each OpenCode or Claude Code turn in an IntelliJ diff window.</li>
-              <li>Commit message generation: adds a commit toolbar action that uses OpenCode or Claude Code to generate concise commit message bullets from the files checked in the Commit panel, with configurable AI tool, model, and extra prompts.</li>
+              <li>Jump from terminal or console file references to editor locations, including line numbers and line ranges.</li>
+              <li>Copy structured terminal output fragments such as URLs, method calls, dotted identifiers, strings, and numbers with one click.</li>
+              <li>Send editor selections, file paths, dragged files, and console error blocks to the active OpenCode or Claude Code terminal.</li>
+              <li>Start OpenCode or Claude Code in dedicated terminal tabs with the environment needed for AI Turn Diff.</li>
+              <li>Review files changed by each AI turn in an IntelliJ diff window.</li>
+              <li>Generate concise commit messages from checked files in the Commit panel, with configurable AI tool, model, and extra prompt.</li>
             </ul>
         """.trimIndent()
         changeNotes = """
