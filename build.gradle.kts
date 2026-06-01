@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.q110"
-version = "0.1.2"
+version = "0.1.3"
 
 kotlin {
     jvmToolchain(17)
@@ -62,17 +62,16 @@ intellijPlatform {
               <li>Copy structured terminal output fragments such as URLs, method calls, dotted identifiers, strings, and numbers with one click.</li>
               <li>Send editor selections, file paths, dragged files, and console error blocks to the active OpenCode or Claude Code terminal.</li>
               <li>Start OpenCode or Claude Code in dedicated terminal tabs with the environment needed for AI Turn Diff.</li>
-              <li>Review files changed by each AI turn in an IntelliJ diff window.</li>
+              <li>Review files with actual content changes from each AI turn in an IntelliJ diff window.</li>
               <li>Generate concise commit messages from checked files in the Commit panel, with configurable AI tool, model, and extra prompt.</li>
             </ul>
         """.trimIndent()
         changeNotes = """
             <ul>
-              <li>Adds AI Turn Diff for OpenCode and Claude Code sessions launched from the plugin.</li>
-              <li>Shows files changed in each AI turn in an IntelliJ diff window, isolated by terminal tab and upstream session ID.</li>
-              <li>OpenCode turn diffs now use official session lifecycle events to avoid premature diff popups.</li>
-              <li>Restores the AI Turn Diff file selector when multiple files are changed.</li>
-              <li>Updates plugin description, README, and architecture documentation.</li>
+              <li>修复 OpenCode 只读取文件时也会弹出 AI Turn Diff 窗口的问题。</li>
+              <li>OpenCode 现在只会对 edit、write、apply_patch 等写入类工具记录变更。</li>
+              <li>AI Turn Diff 会在展示前过滤前后内容完全相同的文件，没有真实文件内容变化时不再弹出 Diff 窗口。</li>
+              <li>跳过项目根目录和目录路径，避免 Diff 文件列表出现无文件名条目。</li>
             </ul>
         """.trimIndent()
 

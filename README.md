@@ -16,7 +16,7 @@ AI Terminal Tools 是一个 JetBrains IDE 插件，面向终端、控制台和 C
 2. 插件会创建新的终端标签页，注入 `AITT_*` 运行环境，并运行 `opencode` 或 `claude`。
 3. 激活目标终端标签页。
 4. 在编辑器、控制台、Diff 或只读查看器中发送选区，或从项目视图、编辑器标签页、Commit 面板发送文件路径。
-5. 通过插件启动的 OpenCode / Claude Code 终端会自动接入 AI Turn Diff，本轮 AI 修改结束后弹出 Diff 窗口。
+5. 通过插件启动的 OpenCode / Claude Code 终端会自动接入 AI Turn Diff，检测到真实文件内容变化时弹出 Diff 窗口。
 
 > AI Turn Diff 只自动接入通过插件按钮启动的 OpenCode / Claude Code 终端。手动启动的终端仍可接收选区和路径发送，但不会自动安装本轮修改监测所需的 hooks/plugin。
 
@@ -111,7 +111,7 @@ Run/Debug Console 中的多语言错误/异常首行会显示发送图标，点�
 
 ### 🧾 AI Turn Diff
 
-通过插件启动 OpenCode 或 Claude Code 后，插件会监测每一轮 AI 对话中的文件修改，并在本轮结束后弹出本轮修改 Diff。
+通过插件启动 OpenCode 或 Claude Code 后，插件会监测每一轮 AI 对话中的文件修改，并在检测到真实文件内容变化时弹出本轮修改 Diff；没有实际变化时会静默跳过。
 
 - OpenCode：启动时生成项目级 `.opencode/plugins/ai-terminal-tools.js` 和当前终端专用 launcher。
 - Claude Code：启动时生成 `.claude/settings.local.json` hooks 和当前终端专用 launcher。
@@ -169,7 +169,7 @@ Commit 面板工具栏会显示“生成提交信息”动作，点击后使用�
 | 项目 | 值 |
 |------|-----|
 | 插件 ID | `io.github.q110.aiterminaltools` |
-| 当前版本 | `0.1.2` |
+| 当前版本 | `0.1.3` |
 | Group | `io.github.q110` |
 | Vendor | `zibo` |
 | 许可证 | [MIT License](https://opensource.org/license/mit/) |

@@ -29,10 +29,7 @@ class AiTurnDiffPresenter(
      * 在 EDT 中使用 IntelliJ DiffManager 弹出多文件 Diff 窗口。
      */
     fun showDiff(turn: AiTurnState) {
-        lastTurn = turn
-
         if (turn.changedFiles.isEmpty()) {
-            notifyNoChanges()
             return
         }
 
@@ -41,11 +38,11 @@ class AiTurnDiffPresenter(
 
             val requests = buildRequests(turn)
             if (requests.isEmpty()) {
-                notifyNoChanges()
                 return@invokeLater
             }
 
             try {
+                lastTurn = turn
                 AiTurnDiffDialog(project, requests).show()
             } catch (exception: Throwable) {
                 log.error("Failed to show diff", exception)
@@ -71,6 +68,9 @@ class AiTurnDiffPresenter(
 
         val requests = turn.changedFiles.mapNotNull { path ->
             val oldSnapshot = turn.beforeSnapshots[path] ?: FileSnapshot.Missing
+            if (!hasContentChange(path, oldSnapshot)) {
+                return@mapNotNull null
+            }
 
             // 跳过二进制文件
             if (oldSnapshot is FileSnapshot.Binary) {
@@ -147,8 +147,24 @@ class AiTurnDiffPresenter(
         return requests
     }
 
-    private fun notifyNoChanges() {
-        notify("AI Terminal 本轮没有检测到文件修改。", NotificationType.INFORMATION)
+    private fun hasContentChange(path: Path, oldSnapshot: FileSnapshot): Boolean {
+        return when (oldSnapshot) {
+            FileSnapshot.Missing -> Files.exists(path) && !Files.isDirectory(path)
+            is FileSnapshot.Text -> {
+                if (!Files.exists(path)) {
+                    true
+                } else if (Files.isDirectory(path)) {
+                    false
+                } else {
+                    try {
+                        Files.readString(path, oldSnapshot.charset) != oldSnapshot.text
+                    } catch (_: Throwable) {
+                        true
+                    }
+                }
+            }
+            is FileSnapshot.Binary -> true
+        }
     }
 
     private fun notify(message: String, type: NotificationType) {

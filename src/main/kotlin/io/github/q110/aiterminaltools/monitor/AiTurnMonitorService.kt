@@ -7,6 +7,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import java.io.File
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -276,6 +277,16 @@ class AiTurnMonitorService(
         }
 
         val relativePath = projectBase.relativize(normalized).toString()
+        if (relativePath.isEmpty()) {
+            log.debug("Path $normalized is project base, skipping")
+            return null
+        }
+
+        if (Files.isDirectory(normalized)) {
+            log.debug("Path $normalized is a directory, skipping")
+            return null
+        }
+
         for (ignored in IGNORED_DIRECTORIES) {
             if (relativePath.startsWith("$ignored/") || relativePath.startsWith("$ignored${File.separator}")) {
                 log.debug("Path $normalized is in ignored directory $ignored, skipping")
