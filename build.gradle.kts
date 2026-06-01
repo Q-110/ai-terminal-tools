@@ -68,10 +68,10 @@ intellijPlatform {
         """.trimIndent()
         changeNotes = """
             <ul>
-              <li>修复 OpenCode 只读取文件时也会弹出 AI Turn Diff 窗口的问题。</li>
-              <li>OpenCode 现在只会对 edit、write、apply_patch 等写入类工具记录变更。</li>
-              <li>AI Turn Diff 会在展示前过滤前后内容完全相同的文件，没有真实文件内容变化时不再弹出 Diff 窗口。</li>
-              <li>跳过项目根目录和目录路径，避免 Diff 文件列表出现无文件名条目。</li>
+              <li>Fixes AI Turn Diff opening when OpenCode only reads files.</li>
+              <li>OpenCode now records changes only for write tools such as edit, write, and apply_patch.</li>
+              <li>AI Turn Diff filters files with identical before and after content before showing the diff window.</li>
+              <li>Skips project root and directory paths to avoid unnamed entries in the diff file list.</li>
             </ul>
         """.trimIndent()
 
