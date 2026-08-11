@@ -26,18 +26,11 @@ class SendSelectionToAiTerminalAction : AnAction(AllIcons.Debugger.Console) {
     /** 构造 payload 并调用桥接服务 */
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return
-        val editor = event.getData(CommonDataKeys.EDITOR)
-        if (editor == null) {
-            AiTerminalBridgeService.notify(project, "没有找到当前编辑器。", NotificationType.WARNING)
-            return
-        }
+        val editor = event.getData(CommonDataKeys.EDITOR) ?: return
 
         val selectionModel = editor.selectionModel
-        val selectedText = selectionModel.selectedText
-        if (selectedText.isNullOrEmpty()) {
-            AiTerminalBridgeService.notify(project, "请先选中要发送给 AI Terminal 的代码。", NotificationType.WARNING)
-            return
-        }
+        val selectedText = selectionModel.selectedText ?: return
+        if (selectedText.isEmpty()) return
 
         val document = editor.document
         val virtualFile = event.getData(CommonDataKeys.VIRTUAL_FILE)
@@ -56,15 +49,9 @@ class SendSelectionToAiTerminalAction : AnAction(AllIcons.Debugger.Console) {
             "-------\n$selectedText\n-------\n"
         }
 
-        when (val result = AiTerminalBridgeService.getInstance(project).sendDirectPaste(payload, event.dataContext)) {
-            is AiTerminalBridgeService.BridgeResult.Success -> {
-                AiTerminalBridgeService.notify(project, "已发送到 AI Terminal", NotificationType.INFORMATION)
-            }
-            is AiTerminalBridgeService.BridgeResult.Scheduled -> {
-            }
-            is AiTerminalBridgeService.BridgeResult.Error -> {
-                AiTerminalBridgeService.notify(project, result.message, NotificationType.WARNING)
-            }
+        val result = AiTerminalBridgeService.getInstance(project).sendDirectPaste(payload, event.dataContext)
+        if (result is AiTerminalBridgeService.BridgeResult.Error) {
+            AiTerminalBridgeService.notify(project, result.message, NotificationType.WARNING)
         }
     }
 }

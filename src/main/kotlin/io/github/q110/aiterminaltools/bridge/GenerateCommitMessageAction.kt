@@ -44,18 +44,11 @@ class GenerateCommitMessageAction : AnAction(AllIcons.Debugger.Console) {
 
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return
-        val workflowUi = event.getData(VcsDataKeys.COMMIT_WORKFLOW_UI)
-        if (workflowUi == null) {
-            AiTerminalBridgeService.notify(project, "没有找到 Commit 面板上下文。", NotificationType.WARNING)
-            return
-        }
+        val workflowUi = event.getData(VcsDataKeys.COMMIT_WORKFLOW_UI) ?: return
 
         val includedChanges = workflowUi.getIncludedChanges()
         val includedUnversionedFiles = workflowUi.getIncludedUnversionedFiles()
-        if (includedChanges.isEmpty() && includedUnversionedFiles.isEmpty()) {
-            AiTerminalBridgeService.notify(project, "请先勾选要提交的文件。", NotificationType.WARNING)
-            return
-        }
+        if (includedChanges.isEmpty() && includedUnversionedFiles.isEmpty()) return
 
         val commitMessageUi = workflowUi.commitMessageUi
         val currentMessage = commitMessageUi.text.trim()
@@ -110,7 +103,6 @@ class GenerateCommitMessageAction : AnAction(AllIcons.Debugger.Console) {
                 invokeOnEdt {
                     commitMessageUi.setText(generatedMessage)
                     commitMessageUi.focus()
-                    AiTerminalBridgeService.notify(project, "已生成提交信息", NotificationType.INFORMATION)
                 }
             } catch (exception: ProcessCanceledException) {
                 throw exception

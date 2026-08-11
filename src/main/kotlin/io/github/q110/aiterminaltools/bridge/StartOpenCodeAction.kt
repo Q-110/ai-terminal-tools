@@ -19,15 +19,9 @@ class StartOpenCodeAction : AnAction() {
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return
         // 具体终端创建、环境变量注入和事件监听安装都由桥接服务统一处理。
-        when (val result = AiTerminalBridgeService.getInstance(project).startOpenCodeTerminal()) {
-            is AiTerminalBridgeService.BridgeResult.Success -> {
-                AiTerminalBridgeService.notify(project, "已启动 OpenCode", NotificationType.INFORMATION)
-            }
-            is AiTerminalBridgeService.BridgeResult.Scheduled -> {
-            }
-            is AiTerminalBridgeService.BridgeResult.Error -> {
-                AiTerminalBridgeService.notify(project, result.message, NotificationType.WARNING)
-            }
+        val result = AiTerminalBridgeService.getInstance(project).startOpenCodeTerminal()
+        if (result is AiTerminalBridgeService.BridgeResult.Error) {
+            AiTerminalBridgeService.notify(project, result.message, NotificationType.WARNING)
         }
     }
 }

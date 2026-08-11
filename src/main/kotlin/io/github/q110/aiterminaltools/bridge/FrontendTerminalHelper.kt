@@ -2,6 +2,7 @@
 package io.github.q110.aiterminaltools.bridge
 
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.ToolWindowManager
@@ -13,6 +14,7 @@ import javax.swing.Timer
 class FrontendTerminalHelper(
     private val project: Project
 ) {
+    private val log = Logger.getInstance(FrontendTerminalHelper::class.java)
     private val tabsManagerClass = Class.forName(FRONTEND_TABS_MANAGER_CLASS)
     private val tabBuilderClass = Class.forName(FRONTEND_TAB_BUILDER_CLASS)
     private val tabClass = Class.forName(FRONTEND_TAB_CLASS)
@@ -48,24 +50,22 @@ class FrontendTerminalHelper(
     fun runCommand(
         tab: Any,
         command: String,
-        successMessage: String,
         failurePrefix: String,
-        onCommandSent: () -> Unit = {},
         onCommandFailed: () -> Unit = {}
     ): BridgeResult {
         val content = contentOf(tab)
-            ?: return BridgeResult.Error("Invalid frontend terminal tab.")
+            ?: return BridgeResult.Error("Frontend Terminal 标签页无效。")
         val view = viewOf(tab)
-            ?: return BridgeResult.Error("Invalid frontend terminal view.")
+            ?: return BridgeResult.Error("Frontend Terminal 视图无效。")
         val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TERMINAL_TOOL_WINDOW_ID)
-            ?: return BridgeResult.Error("Terminal tool window was not found.")
+            ?: return BridgeResult.Error("未找到 Terminal 工具窗口。")
 
         toolWindow.activate(Runnable {
             val selectionCallback = toolWindow.contentManager.setSelectedContentCB(content, true, true)
             selectionCallback.doWhenDone(Runnable {
                 val focusComponent = preferredFocusableComponent(view)
                 if (focusComponent == null) {
-                    AiTerminalBridgeService.notify(project, "Cannot focus the AI terminal input component.", NotificationType.WARNING)
+                    log.warn("Frontend Terminal 无法聚焦输入区，准备回退 Classic Terminal")
                     onCommandFailed()
                     return@Runnable
                 }
@@ -74,21 +74,19 @@ class FrontendTerminalHelper(
                     .doWhenDone(Runnable {
                         try {
                             sendCommandToExecute(view, command)
-                            onCommandSent()
-                            AiTerminalBridgeService.notify(project, successMessage, NotificationType.INFORMATION)
                         } catch (exception: Throwable) {
-                            AiTerminalBridgeService.notify(project, "$failurePrefix: ${exception.message}", NotificationType.WARNING)
+                            log.warn("$failurePrefix，准备回退 Classic Terminal", exception)
                             onCommandFailed()
                         }
                     })
                     .doWhenRejected(Runnable {
-                        AiTerminalBridgeService.notify(project, "Cannot focus the AI terminal input component.", NotificationType.WARNING)
+                        log.warn("Frontend Terminal 无法聚焦输入区，准备回退 Classic Terminal")
                         onCommandFailed()
                     })
             })
             // 异步选择失败必须通知桥接服务，避免 tabId、token 和 launcher 继续残留。
             selectionCallback.doWhenRejected(Runnable {
-                AiTerminalBridgeService.notify(project, "Cannot select the AI terminal tab.", NotificationType.WARNING)
+                log.warn("Frontend Terminal 无法选择标签页，准备回退 Classic Terminal")
                 onCommandFailed()
             })
         }, true, true)
@@ -107,18 +105,18 @@ class FrontendTerminalHelper(
     /** 直接写入输入区，settleAtLineEnd 用于结束 @path 补全状态 */
     fun injectDirectInput(tab: Any, payload: String, settleAtLineEnd: Boolean): BridgeResult {
         val content = contentOf(tab)
-            ?: return BridgeResult.Error("Invalid frontend terminal tab.")
+            ?: return BridgeResult.Error("Frontend Terminal 标签页无效。")
         val view = viewOf(tab)
-            ?: return BridgeResult.Error("Invalid frontend terminal view.")
+            ?: return BridgeResult.Error("Frontend Terminal 视图无效。")
         val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TERMINAL_TOOL_WINDOW_ID)
-            ?: return BridgeResult.Error("Terminal tool window was not found.")
+            ?: return BridgeResult.Error("未找到 Terminal 工具窗口。")
 
         toolWindow.activate(Runnable {
             toolWindow.contentManager.setSelectedContentCB(content, true, true)
                 .doWhenProcessed(Runnable {
                     val focusComponent = preferredFocusableComponent(view)
                     if (focusComponent == null) {
-                        AiTerminalBridgeService.notify(project, "Cannot focus the AI terminal input component.", NotificationType.WARNING)
+                        AiTerminalBridgeService.notify(project, "无法聚焦 AI Terminal 输入区。", NotificationType.WARNING)
                         return@Runnable
                     }
                     val focusCallback = IdeFocusManager.getInstance(project)
@@ -131,7 +129,7 @@ class FrontendTerminalHelper(
                         }
                     })
                     focusCallback.doWhenRejected(Runnable {
-                        AiTerminalBridgeService.notify(project, "Cannot focus the AI terminal input component.", NotificationType.WARNING)
+                        AiTerminalBridgeService.notify(project, "无法聚焦 AI Terminal 输入区。", NotificationType.WARNING)
                     })
                 })
         }, true, true)
@@ -151,28 +149,24 @@ class FrontendTerminalHelper(
             sendText(view, payload)
         }
         if (settleAtLineEnd) {
-            scheduleLineEndSpace(view, focusComponent, true)
-        } else {
-            AiTerminalBridgeService.notify(project, "已发送到 AI Terminal", NotificationType.INFORMATION)
+            scheduleLineEndSpace(view, focusComponent)
         }
     }
 
-    private fun scheduleLineEndSpace(view: Any, focusComponent: JComponent, notifyAfter: Boolean) {
+    /** 延迟补发行尾空格；该兼容细节失败时仅记录日志，不打断已经完成的发送操作。 */
+    private fun scheduleLineEndSpace(view: Any, focusComponent: JComponent) {
         val timer = Timer(300) {
             try {
                 IdeFocusManager.getInstance(project)
                     .requestFocusInProject(focusComponent, project)
                     .doWhenDone(Runnable {
                         sendLineEndSpace(view)
-                        if (notifyAfter) {
-                            AiTerminalBridgeService.notify(project, "已发送到 AI Terminal", NotificationType.INFORMATION)
-                        }
                     })
                     .doWhenRejected(Runnable {
-                        AiTerminalBridgeService.notify(project, "Cannot focus the AI terminal input component.", NotificationType.WARNING)
+                        log.warn("补发 AI Terminal 行尾空格时无法聚焦输入区")
                     })
             } catch (exception: Throwable) {
-                AiTerminalBridgeService.notify(project, "发送 AI Terminal 行尾空格失败：${exception.message}", NotificationType.WARNING)
+                log.warn("补发 AI Terminal 行尾空格失败", exception)
             }
         }
         timer.isRepeats = false

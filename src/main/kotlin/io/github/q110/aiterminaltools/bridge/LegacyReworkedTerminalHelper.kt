@@ -1,9 +1,9 @@
 // 旧版 Reworked Terminal 兼容层 — 通过反射适配 2025.1/2025.2 终端 API
 package io.github.q110.aiterminaltools.bridge
 
-import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindowManager
@@ -16,6 +16,8 @@ import javax.swing.Timer
 class LegacyReworkedTerminalHelper(
     private val project: Project
 ) {
+    private val log = Logger.getInstance(LegacyReworkedTerminalHelper::class.java)
+
     /** 优先尝试 Reworked 引擎，避免误拿到 Classic 终端实现 */
     fun createAiTerminal(tabName: String, workingDirectory: String): TerminalWidget? {
         val manager = TerminalToolWindowManager.getInstance(project)
@@ -44,27 +46,24 @@ class LegacyReworkedTerminalHelper(
     fun runCommand(
         widget: TerminalWidget,
         command: String,
-        successMessage: String,
-        failurePrefix: String,
-        onCommandSent: () -> Unit = {},
         onCommandFailed: () -> Unit = {}
     ): AiTerminalBridgeService.BridgeResult {
         val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TERMINAL_TOOL_WINDOW_ID)
-            ?: return AiTerminalBridgeService.BridgeResult.Error("Terminal tool window was not found.")
+            ?: return AiTerminalBridgeService.BridgeResult.Error("未找到 Terminal 工具窗口。")
 
         toolWindow.activate(Runnable {
             val future = terminalSizeInitializedFuture(widget)
 
             if (future == null) {
-                sendCommand(widget, command, successMessage, failurePrefix, onCommandSent, onCommandFailed)
+                sendCommand(widget, command, onCommandFailed)
             } else {
                 future.whenComplete { _: Any?, exception: Throwable? ->
                     ApplicationManager.getApplication().invokeLater {
                         if (exception != null) {
-                            AiTerminalBridgeService.notify(project, "$failurePrefix: ${exception.message}", NotificationType.WARNING)
+                            log.warn("Reworked Terminal 初始化失败，准备回退 Classic Terminal", exception)
                             onCommandFailed()
                         } else {
-                            sendCommand(widget, command, successMessage, failurePrefix, onCommandSent, onCommandFailed)
+                            sendCommand(widget, command, onCommandFailed)
                         }
                     }
                 }
@@ -231,23 +230,16 @@ class LegacyReworkedTerminalHelper(
     private fun sendCommand(
         widget: TerminalWidget,
         command: String,
-        successMessage: String,
-        failurePrefix: String,
-        onCommandSent: () -> Unit,
         onCommandFailed: () -> Unit
     ) {
         try {
             widget.requestFocus()
             widget.sendCommandToExecute(command)
-            onCommandSent()
-            AiTerminalBridgeService.notify(project, successMessage, NotificationType.INFORMATION)
         } catch (_: Throwable) {
             try {
                 sendDirectInput(widget, "$command\r")
-                onCommandSent()
-                AiTerminalBridgeService.notify(project, successMessage, NotificationType.INFORMATION)
             } catch (writeException: Throwable) {
-                AiTerminalBridgeService.notify(project, "$failurePrefix: ${writeException.message}", NotificationType.WARNING)
+                log.warn("Reworked Terminal 发送命令失败，准备回退 Classic Terminal", writeException)
                 onCommandFailed()
             }
         }
@@ -290,12 +282,13 @@ class LegacyReworkedTerminalHelper(
         return null
     }
 
+    /** 延迟补发行尾空格；该兼容细节失败时仅记录日志。 */
     private fun scheduleLineEndSpace(writeLineEndSpace: () -> Unit) {
         Timer(SETTLE_INPUT_DELAY_MS) {
             try {
                 writeLineEndSpace()
             } catch (exception: Throwable) {
-                AiTerminalBridgeService.notify(project, "发送 AI Terminal 行尾空格失败：${exception.message}", NotificationType.WARNING)
+                log.warn("补发 AI Terminal 行尾空格失败", exception)
             }
         }.apply {
             isRepeats = false

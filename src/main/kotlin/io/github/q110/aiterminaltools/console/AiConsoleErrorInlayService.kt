@@ -136,7 +136,7 @@ class AiConsoleErrorInlayService(
     /** 点击图标时只发送当前错误块文本，而不是整个控制台输出 */
     private fun sendErrorToAiTerminal(editor: Editor, rangeMarker: RangeMarker) {
         if (!rangeMarker.isValid) {
-            AiTerminalBridgeService.notify(project, "The console error is no longer available.", NotificationType.WARNING)
+            AiTerminalBridgeService.notify(project, "控制台错误已失效，请重新选择。", NotificationType.WARNING)
             return
         }
 
@@ -145,21 +145,15 @@ class AiConsoleErrorInlayService(
         val endOffset = rangeMarker.endOffset.coerceIn(startOffset, document.textLength)
         val errorText = document.getText(TextRange(startOffset, endOffset)).trim()
         if (errorText.isEmpty()) {
-            AiTerminalBridgeService.notify(project, "The console error is empty.", NotificationType.WARNING)
+            AiTerminalBridgeService.notify(project, "控制台错误内容为空。", NotificationType.WARNING)
             return
         }
 
         val payload = "控制台错误：\n-------\n$errorText\n-------\n"
         val dataContext = DataManager.getInstance().getDataContext(editor.component)
-        when (val result = AiTerminalBridgeService.getInstance(project).sendDirectPaste(payload, dataContext)) {
-            is AiTerminalBridgeService.BridgeResult.Success -> {
-                AiTerminalBridgeService.notify(project, "已发送控制台错误到 AI Terminal", NotificationType.INFORMATION)
-            }
-            is AiTerminalBridgeService.BridgeResult.Scheduled -> {
-            }
-            is AiTerminalBridgeService.BridgeResult.Error -> {
-                AiTerminalBridgeService.notify(project, result.message, NotificationType.WARNING)
-            }
+        val result = AiTerminalBridgeService.getInstance(project).sendDirectPaste(payload, dataContext)
+        if (result is AiTerminalBridgeService.BridgeResult.Error) {
+            AiTerminalBridgeService.notify(project, result.message, NotificationType.WARNING)
         }
     }
 

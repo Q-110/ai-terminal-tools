@@ -141,7 +141,7 @@ class AiTurnDiffPresenter(
         }
 
         if (skippedBinaryCount > 0) {
-            notify("已跳过 $skippedBinaryCount 个二进制文件。", NotificationType.INFORMATION)
+            log.info("AI Turn Diff 已跳过 $skippedBinaryCount 个二进制文件")
         }
 
         return requests

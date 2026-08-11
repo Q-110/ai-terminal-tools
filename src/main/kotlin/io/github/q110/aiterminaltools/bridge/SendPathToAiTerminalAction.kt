@@ -31,25 +31,13 @@ class SendPathToAiTerminalAction : DumbAwareAction() {
     /** 以 @path 格式发送路径，settleAtLineEnd=true 结束 @路径补全 */
     override fun actionPerformed(event: AnActionEvent) {
         val project = event.project ?: return
-        val virtualFile = selectedVirtualFiles(event).firstOrNull()
-        if (virtualFile == null) {
-            AiTerminalBridgeService.notify(project, "没有找到要发送的文件或文件夹。", NotificationType.WARNING)
-            return
-        }
+        val virtualFile = selectedVirtualFiles(event).firstOrNull() ?: return
 
         val payload = "@${displayPath(project, virtualFile)}"
-        when (
-            val result = AiTerminalBridgeService.getInstance(project)
-                .sendDirectInput(payload, event.dataContext, settleAtLineEnd = true)
-        ) {
-            is AiTerminalBridgeService.BridgeResult.Success -> {
-                AiTerminalBridgeService.notify(project, "已发送到 AI Terminal", NotificationType.INFORMATION)
-            }
-            is AiTerminalBridgeService.BridgeResult.Scheduled -> {
-            }
-            is AiTerminalBridgeService.BridgeResult.Error -> {
-                AiTerminalBridgeService.notify(project, result.message, NotificationType.WARNING)
-            }
+        val result = AiTerminalBridgeService.getInstance(project)
+            .sendDirectInput(payload, event.dataContext, settleAtLineEnd = true)
+        if (result is AiTerminalBridgeService.BridgeResult.Error) {
+            AiTerminalBridgeService.notify(project, result.message, NotificationType.WARNING)
         }
     }
 

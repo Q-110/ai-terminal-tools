@@ -288,7 +288,7 @@ class AiTerminalBridgeService(
             if (toolWindow == null) {
                 cleanupAiTerminalLifecycle(tabContext, showDiff = false)
                 inProgress.set(false)
-                notify(project, "Terminal tool window was not found.", NotificationType.WARNING)
+                notify(project, "未找到 Terminal 工具窗口。", NotificationType.WARNING)
                 return@invokeLater
             }
 
@@ -308,10 +308,7 @@ class AiTerminalBridgeService(
                                     startClassicTerminal(tabName, workingDirectory, command, toolName, tabContext)
                                 } else {
                                     startLegacyReworkedTerminal(tabName, workingDirectory, command, toolName, tabContext)
-                                        ?: run {
-                                            notifyLegacyReworkedFallbackIfNeeded(toolName)
-                                            startClassicTerminal(tabName, workingDirectory, command, toolName, tabContext)
-                                        }
+                                        ?: startClassicTerminal(tabName, workingDirectory, command, toolName, tabContext)
                                 }
                             if (result is BridgeResult.Error) {
                                 cleanupAiTerminalLifecycle(tabContext, showDiff = false)
@@ -350,7 +347,7 @@ class AiTerminalBridgeService(
         val tab = try {
             helper.createAiTerminal(tabName, workingDirectory)
         } catch (exception: Throwable) {
-            notify(project, "新版终端不可用，改用 Classic Terminal：${exception.message}", NotificationType.WARNING)
+            log.warn("Frontend Terminal 创建失败，准备回退兼容终端", exception)
             return null
         }
 
@@ -362,15 +359,20 @@ class AiTerminalBridgeService(
             helper.runCommand(
                 tab,
                 command,
-                "已启动 $toolName 终端",
                 "启动 $toolName 失败",
                 onCommandFailed = {
-                    cleanupAiTerminalLifecycle(tabContext, showDiff = false)
+                    // Frontend 启动失败仅记录内部回退过程，最终失败统一由 Classic 提示。
+                    aiFrontendTerminals.remove(tab)
+                    val result = startClassicTerminal(tabName, workingDirectory, command, toolName, tabContext)
+                    if (result is BridgeResult.Error) {
+                        cleanupAiTerminalLifecycle(tabContext, showDiff = false)
+                        notify(project, result.message, NotificationType.WARNING)
+                    }
                 }
             )
         } catch (exception: Throwable) {
             aiFrontendTerminals.remove(tab)
-            notify(project, "新版终端不可用，改用 Classic Terminal：${exception.message}", NotificationType.WARNING)
+            log.warn("Frontend Terminal 运行命令失败，准备回退兼容终端", exception)
             null
         }
     }
@@ -395,8 +397,6 @@ class AiTerminalBridgeService(
             legacyReworkedTerminalHelper.runCommand(
                 widget = widget,
                 command = command,
-                successMessage = "已启动 $toolName 终端",
-                failurePrefix = "运行 $command 失败",
                 onCommandFailed = {
                     // Reworked 失败时只解除该终端关联，保留同一上下文供 Classic 回退使用。
                     aiLegacyReworkedTerminals.remove(widget)
@@ -409,7 +409,7 @@ class AiTerminalBridgeService(
             )
         } catch (exception: Throwable) {
             aiLegacyReworkedTerminals.entries.removeIf { it.value.context.tabId == tabContext.tabId }
-            notify(project, "Reworked Terminal 不可用，改用 Classic Terminal：${exception.message}", NotificationType.WARNING)
+            log.warn("Reworked Terminal 启动失败，准备回退 Classic Terminal", exception)
             null
         }
     }
@@ -427,7 +427,7 @@ class AiTerminalBridgeService(
 
         val terminalToolWindowManager = TerminalToolWindowManager.getInstance(project)
         val toolWindow = terminalToolWindow(terminalToolWindowManager)
-            ?: return BridgeResult.Error("Terminal tool window was not found.")
+            ?: return BridgeResult.Error("未找到 Terminal 工具窗口。")
         val startupOptions = ShellStartupOptions.Builder()
             .workingDirectory(workingDirectory)
             .build()
@@ -436,14 +436,14 @@ class AiTerminalBridgeService(
             terminalToolWindowManager.terminalRunner.startShellTerminalWidget(startupDisposable, startupOptions, true)
         } catch (exception: Throwable) {
             Disposer.dispose(startupDisposable)
-            return BridgeResult.Error("Failed to create $toolName Terminal: ${exception.message}")
+            return BridgeResult.Error("创建 $toolName 终端失败：${exception.message}")
         }
 
         val content = try {
             terminalToolWindowManager.newTab(toolWindow, widget)
         } catch (exception: Throwable) {
             Disposer.dispose(startupDisposable)
-            return BridgeResult.Error("Failed to create $toolName Terminal tab: ${exception.message}")
+            return BridgeResult.Error("创建 $toolName 终端标签页失败：${exception.message}")
         }
         if (!trackAiTerminal(TargetTerminal.Classic(widget), tabContext, startupDisposable)) {
             return BridgeResult.Error("$toolName 终端启动已取消。")
@@ -454,15 +454,14 @@ class AiTerminalBridgeService(
             toolWindow.activate(Runnable {
                 try {
                     ShellTerminalWidget.toShellJediTermWidgetOrThrow(widget).executeCommand(command)
-                    notify(project, "已启动 $toolName 终端", NotificationType.INFORMATION)
                 } catch (exception: Throwable) {
                     cleanupAiTerminalLifecycle(tabContext, showDiff = false)
-                    notify(project, "Failed to run $command: ${exception.message}", NotificationType.WARNING)
+                    notify(project, "运行 $toolName 失败：${exception.message}", NotificationType.WARNING)
                 }
             }, true, true)
             BridgeResult.Scheduled
         } catch (exception: Throwable) {
-            BridgeResult.Error("Failed to activate $toolName Terminal: ${exception.message}")
+            BridgeResult.Error("激活 $toolName 终端失败：${exception.message}")
         }
     }
 
@@ -509,21 +508,6 @@ class AiTerminalBridgeService(
             method.invoke(manager) as? ToolWindow
         } catch (_: Throwable) {
             null
-        }
-    }
-
-    private fun notifyLegacyReworkedFallbackIfNeeded(toolName: String) {
-        when (ideBaselineVersion()) {
-            251 -> notify(
-                project,
-                "使用 Classic Terminal 启动 $toolName。",
-                NotificationType.WARNING
-            )
-            252 -> notify(
-                project,
-                "使用 Classic Terminal 启动 $toolName。",
-                NotificationType.WARNING
-            )
         }
     }
 
@@ -649,13 +633,13 @@ class AiTerminalBridgeService(
         }
     }
 
-    /** 经典终端上行尾空格延时 300ms（等待终端处理完输入） */
+    /** 经典终端上行尾空格延时 300ms（等待终端处理完输入），失败仅记录日志。 */
     private fun scheduleClassicLineEndSpace(writeLineEndSpace: () -> Unit) {
         Timer(SETTLE_INPUT_DELAY_MS) {
             try {
                 writeLineEndSpace()
             } catch (exception: Throwable) {
-                notify(project, "发送 AI Terminal 行尾空格失败：${exception.message}", NotificationType.WARNING)
+                log.warn("补发 AI Terminal 行尾空格失败", exception)
             }
         }.apply {
             isRepeats = false
