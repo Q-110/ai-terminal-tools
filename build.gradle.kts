@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.q110"
-version = "0.1.6"
+version = "0.1.7"
 
 kotlin {
     jvmToolchain(17)
@@ -67,11 +67,19 @@ intellijPlatform {
             </ul>
         """.trimIndent()
         changeNotes = """
+            <p><b>Consolidated changes from 0.1.4 through 0.1.7:</b></p>
             <ul>
-              <li>Stores the latest AI Turn Diff separately for each OpenCode or Claude Code terminal and exposes it from the Terminal more-actions menu.</li>
-              <li>Clears the corresponding Diff history when an AI terminal closes without affecting other terminal tabs.</li>
-              <li>Silences successful launches, sends, and commit message generation while retaining final failure notifications.</li>
-              <li>Logs terminal compatibility fallbacks, skipped binary files, and delayed input-settle failures instead of showing intermediate balloons.</li>
+              <li>Preserves existing Claude Code settings, complex fields, and user hook groups when installing AI Turn Diff hooks.</li>
+              <li>Updates only AI Terminal Tools hooks on repeated launches and aborts safely when settings.local.json is unreadable, malformed, or structurally incompatible.</li>
+              <li>Releases per-terminal monitoring state, event tokens, active turns, and launcher scripts when Frontend, Reworked, or Classic AI terminal tabs close, startup fails, or the project is disposed.</li>
+              <li>Finishes active turns on real tab close while ignoring temporary moves and preventing late HTTP events from restoring released state.</li>
+              <li>Silences successful launches, sends, and commit message generation; compatibility fallbacks, skipped binary files, and delayed input-settle failures are logged instead of shown as intermediate balloons.</li>
+              <li>Retains one final notification only for actionable launch, send, commit generation, or Diff failures, plus the explicit no-history Diff action.</li>
+              <li>Stores the latest AI Turn Diff separately for each OpenCode or Claude Code terminal and exposes the selected terminal's result from the Terminal more-actions menu.</li>
+              <li>Clears only the closed terminal's Diff history without affecting other terminal tabs.</li>
+              <li>Uses the IntelliJ Platform FrameWrapper for AI Turn Diff windows so the title bar follows the active IDE theme from the first frame.</li>
+              <li>Preserves the independent resizable window, native minimize and maximize controls, and per-project window size and position.</li>
+              <li>Removes the Windows-specific DWM/JNA title-bar workaround and delegates Diff panel disposal to the platform window lifecycle.</li>
             </ul>
         """.trimIndent()
 

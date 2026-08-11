@@ -44,7 +44,7 @@ src/main/kotlin/io/github/q110/aiterminaltools/
 │   ├── AiTurnHookInstaller.kt             # Claude Code hooks 与 launcher 生成器
 │   ├── AiTurnSnapshotService.kt           # 文件修改前快照捕获
 │   ├── AiTurnDiffPresenter.kt             # 构建并展示本轮文件 Diff
-│   ├── AiTurnDiffDialog.kt                # 多文件 Diff 窗口
+│   ├── AiTurnDiffDialog.kt                # 使用 IDE 主题 FrameWrapper 的多文件 Diff 窗口
 │   └── ShowLastAiTurnDiffAction.kt        # 重新打开当前 AI 终端最近一次 Diff
 |
 └── settings/                              # 插件配置
@@ -72,7 +72,9 @@ OpenCode：
 
 Claude Code：
 
-- 启动时生成 `.claude/settings.local.json` hooks 和当前终端专用 launcher。
+- 启动时将本插件 hooks 无损合并到 `.claude/settings.local.json` 并生成当前终端专用 launcher。
+- 合并时保留原有复杂字段、用户 hooks 和同事件下的其他 hook；重复启动只替换本插件 hook，不重复注册。
+- 原配置无法读取、JSON 非法或 hooks 结构不兼容时停止安装，不覆盖用户文件。
 - 通过 `UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`Stop` / `StopFailure` 维护本轮状态。
 
 隔离与展示：
@@ -83,4 +85,11 @@ Claude Code：
 - 终端 Content 在异步命令发送前绑定 `tabId`；真正关闭时由桥接服务注销监控状态、撤销 token 并删除当前 tab 的 launcher。
 - 终端关闭时同步删除该 `tabId` 的 Diff 历史；关闭活动 Turn 的最终 Diff 只展示，不再写回历史。
 - 启动失败和项目销毁复用同一幂等清理流程，标签临时迁移或 Detach 不触发生命周期释放。
-- 本轮结束后由 `AiTurnDiffPresenter` 构建 Diff，并通过 `AiTurnDiffDialog` 展示。
+- 本轮结束后由 `AiTurnDiffPresenter` 构建 Diff，并通过 IDE 主题管理的 `AiTurnDiffDialog` 独立窗口展示。
+
+通知策略：
+
+- 启动、发送、提交信息生成等成功操作静默完成。
+- Frontend / Reworked 回退 Classic、跳过二进制文件和行尾空格补发失败属于内部兼容细节，仅写日志。
+- 只有最终启动、发送、提交信息生成、Diff 打开失败或用户主动查看当前终端但没有历史 Diff 时进入通知中心。
+- 点击复制继续使用 700ms 局部“已复制”提示，不进入通知中心；覆盖已有提交信息仍使用确认框。

@@ -162,12 +162,19 @@ Commit 面板工具栏会显示“生成提交信息”动作，点击后使用�
 .\gradlew.bat buildPlugin
 ```
 
-## 🆕 0.1.6 更新说明
+## 🆕 0.1.7 更新说明（汇总 0.1.4–0.1.7）
 
-- AI Turn Diff 最近记录改为按 `tabId` 保存，多个 OpenCode / Claude Code 终端不再相互覆盖。
-- Terminal 右上角“三点”菜单新增“显示当前 AI 终端的上次 Diff”，并在终端关闭时只清理对应记录。
-- 启动、发送和提交信息生成成功后静默完成；Frontend / Reworked 回退 Classic、跳过二进制文件和行尾空格补发失败仅记录日志。
-- 保留最终启动或发送失败、提交信息生成失败、Diff 打开失败及当前终端无历史 Diff 等必要提示。
+- 启动 Claude Code 时无损合并 `.claude/settings.local.json`，保留原有复杂字段、用户 hooks 和同事件下的其他 hook。
+- 重复启动时只更新本插件 hook，不重复注册；配置无法读取、JSON 非法或 hooks 结构不兼容时停止安装，不覆盖原文件。
+- Frontend、Reworked、Classic AI 终端关闭、最终启动失败或项目销毁时，释放对应 `tabId`、鉴权 token、活动 Turn 和专用 launcher。
+- 真实关闭活动终端时完成本轮 Diff 收尾；临时移动或 Detach 不触发清理，迟到 HTTP 事件不能恢复已注销状态。
+- 启动、发送和提交信息生成成功后静默完成；终端兼容回退、跳过二进制文件和行尾空格补发失败仅记录日志。
+- 仅在最终启动、发送、提交信息生成或 Diff 打开失败等需要处理的场景提示，并保留主动查看但当前终端无历史 Diff 的提示。
+- AI Turn Diff 最近记录按 `tabId` 独立保存，多个 OpenCode / Claude Code 终端不再相互覆盖。
+- Terminal 右上角“三点”菜单新增“显示当前 AI 终端的上次 Diff”，关闭终端时只清理对应 Diff 历史。
+- AI Turn Diff 独立窗口改用 IntelliJ Platform `FrameWrapper`，标题栏从首次显示起跟随当前 IDE 深色或浅色主题。
+- 保留独立窗口的最小化、最大化和缩放能力，并由 IDE 记忆窗口尺寸与位置。
+- 删除 Windows 专用 DWM/JNA 标题栏适配，Diff 面板资源改由平台窗口生命周期统一释放。
 
 ## 📚 开发者文档
 
@@ -178,7 +185,7 @@ Commit 面板工具栏会显示“生成提交信息”动作，点击后使用�
 | 项目 | 值 |
 |------|-----|
 | 插件 ID | `io.github.q110.aiterminaltools` |
-| 当前版本 | `0.1.6` |
+| 当前版本 | `0.1.7` |
 | Group | `io.github.q110` |
 | Vendor | `zibo` |
 | 许可证 | [MIT License](https://opensource.org/license/mit/) |
