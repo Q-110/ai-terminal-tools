@@ -110,6 +110,10 @@ class AiTerminalDropService(
                 }
 
                 override fun contentRemoved(event: ContentManagerEvent) {
+                    // Detach、拖动或迁移标签时 Content 会被临时移除，此时终端会继续存活，不能撤销其鉴权状态。
+                    if (event.content.getUserData(Content.TEMPORARY_REMOVED_KEY) == true) {
+                        return
+                    }
                     project.service<AiTerminalBridgeService>().unregisterAiTerminalContent(event.content)
                     disposeDropTarget(event.content)
                     disposeClassicCopyTarget(event.content)

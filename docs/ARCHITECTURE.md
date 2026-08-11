@@ -79,4 +79,6 @@ Claude Code：
 
 - Diff 内容按 `tabId` 和上游 `sessionID` 隔离。
 - 多个 OpenCode / Claude Code 终端同时运行时不会串台。
+- 终端 Content 在异步命令发送前绑定 `tabId`；真正关闭时由桥接服务注销监控状态、撤销 token 并删除当前 tab 的 launcher。
+- 启动失败和项目销毁复用同一幂等清理流程，标签临时迁移或 Detach 不触发生命周期释放。
 - 本轮结束后由 `AiTurnDiffPresenter` 构建 Diff，并通过 `AiTurnDiffDialog` 展示。

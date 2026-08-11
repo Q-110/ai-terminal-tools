@@ -116,6 +116,7 @@ Run/Debug Console 中的多语言错误/异常首行会显示发送图标，点�
 - OpenCode：启动时生成项目级 `.opencode/plugins/ai-terminal-tools.js` 和当前终端专用 launcher。
 - Claude Code：启动时将 AI Turn Diff hooks 合并到 `.claude/settings.local.json` 并生成当前终端专用 launcher；已有配置和 hooks 会保留，配置异常时停止写入。
 - Diff 内容按 `tabId` 和上游 `sessionID` 隔离，多个 OpenCode / Claude Code 终端同时运行时不会串台。
+- 关闭 AI 终端时会结束活动 Turn、撤销该终端的事件鉴权，并删除其专用 launcher；启动失败和项目关闭也会释放对应资源。
 - 关闭 Diff 后，可通过 Tools → AI Terminal Tools → Show Last AI Turn Diff 重新打开最近一次结果。
 
 > 已运行的旧 OpenCode / Claude Code 进程不会自动加载新生成的 plugin 或 hooks。更新插件或代码后，请通过插件按钮重新启动 AI 终端。
@@ -160,11 +161,11 @@ Commit 面板工具栏会显示“生成提交信息”动作，点击后使用�
 .\gradlew.bat buildPlugin
 ```
 
-## 🆕 0.1.4 更新说明
+## 🆕 0.1.5 更新说明
 
-- 修复启动 Claude Code 时可能覆盖 `.claude/settings.local.json` 原有复杂字段和 hooks 的问题。
-- 重复启动 Claude Code 时仅更新本插件 hook，不会重复注册，也不会影响同事件下的用户 hook。
-- 原配置无法读取、JSON 非法或 hooks 结构不兼容时停止安装，避免破坏用户配置。
+- 修复关闭 Frontend、Reworked 或 Classic AI 终端后，`tabId`、鉴权 token、Turn 状态仍长期保留的问题。
+- 终端关闭、最终启动失败或项目销毁时，仅删除当前 tab 的 OpenCode / Claude Code launcher，不影响共享 hooks、配置和其他终端。
+- 关闭活动 Turn 时完成本轮 Diff 收尾，并阻止迟到 HTTP 事件恢复已注销状态；标签临时迁移或 Detach 不会被误判为关闭。
 
 ## 📚 开发者文档
 
@@ -175,7 +176,7 @@ Commit 面板工具栏会显示“生成提交信息”动作，点击后使用�
 | 项目 | 值 |
 |------|-----|
 | 插件 ID | `io.github.q110.aiterminaltools` |
-| 当前版本 | `0.1.4` |
+| 当前版本 | `0.1.5` |
 | Group | `io.github.q110` |
 | Vendor | `zibo` |
 | 许可证 | [MIT License](https://opensource.org/license/mit/) |

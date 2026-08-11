@@ -22,26 +22,37 @@ class AiTurnMonitorService(
     private val turns = ConcurrentHashMap<String, AiTurnState>()
 
     /** 注册由插件启动的 AI 终端，后续 HTTP 事件必须匹配 tabId/token */
+    @Synchronized
     fun registerTab(context: AiTerminalTabContext) {
         tabs[context.tabId] = context
         log.info("Registered AI terminal tab: ${context.tabId} (${context.tool})")
     }
 
-    fun unregisterTab(tabId: String) {
-        tabs.remove(tabId)
-        val turn = turns.remove(tabId)
+    /** 撤销终端鉴权并结束活动 Turn；项目销毁时可选择不再展示 Diff。 */
+    fun unregisterTab(tabId: String, showDiff: Boolean = true) {
+        // 状态撤销与事件处理共享同一锁，耗时的 VFS 刷新和 Diff 调度在锁外执行。
+        val turn = synchronized(this) {
+            tabs.remove(tabId)
+            turns.remove(tabId)
+        }
         if (turn != null && turn.changedFiles.isNotEmpty()) {
-            log.info("Tab $tabId unregistered with ${turn.changedFiles.size} uncommitted changes, finishing turn")
-            refreshAndShowDiff(turn)
+            if (showDiff) {
+                log.info("Tab $tabId unregistered with ${turn.changedFiles.size} uncommitted changes, finishing turn")
+                refreshAndShowDiff(turn)
+            } else {
+                log.info("Tab $tabId unregistered during project cleanup; active turn was released without showing Diff")
+            }
         }
     }
 
     /** 供后续 VFS 兜底监听读取当前活跃 turn */
+    @Synchronized
     fun activeTurns(): List<AiTurnState> {
         return turns.values.toList()
     }
 
     /** 处理 Claude hooks / OpenCode plugin 发回的标准化事件 */
+    @Synchronized
     fun handle(event: AiTurnEvent) {
         val tab = tabs[event.tabId]
         if (tab == null) {

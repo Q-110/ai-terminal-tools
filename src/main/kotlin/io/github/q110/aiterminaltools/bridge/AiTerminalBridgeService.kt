@@ -30,16 +30,16 @@ import org.jetbrains.plugins.terminal.TerminalToolWindowManager
 import java.io.IOException
 import java.nio.file.Path
 import java.security.SecureRandom
-import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.Timer
 
 @Service(Service.Level.PROJECT)
 class AiTerminalBridgeService(
     private val project: Project
-) {
+) : Disposable {
     /** 新版终端辅助类，仅在 2025.3+ IDE 中可加载，低版本为 null */
     private val frontendHelper: FrontendTerminalHelper? = try {
         FrontendTerminalHelper(project)
@@ -51,9 +51,10 @@ class AiTerminalBridgeService(
     private val log = Logger.getInstance(AiTerminalBridgeService::class.java)
     private val openCodeTerminalStartInProgress = AtomicBoolean(false)
     private val claudeCodeTerminalStartInProgress = AtomicBoolean(false)
-    private val aiFrontendTerminals = Collections.newSetFromMap(IdentityHashMap<Any, Boolean>())
-    private val aiLegacyReworkedTerminals = Collections.newSetFromMap(IdentityHashMap<TerminalWidget, Boolean>())
-    private val aiClassicTerminals = Collections.newSetFromMap(IdentityHashMap<TerminalWidget, Boolean>())
+    private val activeAiTerminalContexts = ConcurrentHashMap<String, AiTerminalTabContext>()
+    private val aiFrontendTerminals = IdentityHashMap<Any, AiTerminalRegistration>()
+    private val aiLegacyReworkedTerminals = IdentityHashMap<TerminalWidget, AiTerminalRegistration>()
+    private val aiClassicTerminals = IdentityHashMap<TerminalWidget, AiTerminalRegistration>()
 
     /** 直接写入当前激活的 AI 终端输入区 */
     fun sendDirectInput(payload: String, dataContext: DataContext, settleAtLineEnd: Boolean = false): BridgeResult {
@@ -90,27 +91,33 @@ class AiTerminalBridgeService(
     }
 
     fun isRecordedAiTerminalContent(content: Content): Boolean {
-        pruneInvalidAiTerminalRecords()
-
         val frontendHelper = frontendHelper
-        if (frontendHelper != null && aiFrontendTerminals.any { isFrontendContentOf(frontendHelper, it, content) }) {
+        if (frontendHelper != null && aiFrontendTerminals.keys.any { isFrontendContentOf(frontendHelper, it, content) }) {
             return true
         }
 
         val widget = TerminalToolWindowManager.findWidgetByContent(content)
-        return widget != null && (widget in aiLegacyReworkedTerminals || widget in aiClassicTerminals)
+        return widget != null && (aiLegacyReworkedTerminals.containsKey(widget) || aiClassicTerminals.containsKey(widget))
     }
 
+    /** 终端 Content 被真正移除时，释放其监控上下文、鉴权 token 和专用 launcher。 */
     internal fun unregisterAiTerminalContent(content: Content) {
+        val contexts = linkedMapOf<String, AiTerminalTabContext>()
         frontendHelper?.let { helper ->
-            aiFrontendTerminals.removeAll { isFrontendContentOf(helper, it, content) }
+            aiFrontendTerminals
+                .filterKeys { tab -> isFrontendContentOf(helper, tab, content) }
+                .values
+                .forEach { registration -> contexts[registration.context.tabId] = registration.context }
         }
 
         val widget = TerminalToolWindowManager.findWidgetByContent(content)
         if (widget != null) {
-            aiLegacyReworkedTerminals.remove(widget)
-            aiClassicTerminals.remove(widget)
+            aiLegacyReworkedTerminals[widget]?.let { contexts[it.context.tabId] = it.context }
+            aiClassicTerminals[widget]?.let { contexts[it.context.tabId] = it.context }
         }
+
+        // Content 与 tabId 的关联只在桥接服务维护，关闭时统一执行一次完整释放。
+        contexts.values.forEach { context -> cleanupAiTerminalLifecycle(context, showDiff = true) }
     }
 
     /** 创建新的 OpenCode terminal，并启动 opencode */
@@ -155,6 +162,7 @@ class AiTerminalBridgeService(
             }
         } catch (exception: Throwable) {
             log.error("Failed to install OpenCode plugin", exception)
+            AiTurnOpenCodeInstaller(project).cleanupLauncherScripts(tabId)
             openCodeTerminalStartInProgress.set(false)
             notify(project, "安装 OpenCode Plugin 失败：${exception.message}", NotificationType.WARNING)
             return
@@ -168,14 +176,31 @@ class AiTerminalBridgeService(
             workingDirectory = Path.of(workingDirectory),
             createdAtMillis = System.currentTimeMillis()
         )
-        project.service<AiTurnMonitorService>().registerTab(tabContext)
+        activeAiTerminalContexts[tabId] = tabContext
+        try {
+            project.service<AiTurnMonitorService>().registerTab(tabContext)
+        } catch (exception: Throwable) {
+            log.error("Failed to register OpenCode terminal lifecycle", exception)
+            cleanupAiTerminalLifecycle(tabContext, showDiff = false)
+            openCodeTerminalStartInProgress.set(false)
+            notify(project, "注册 OpenCode 终端状态失败：${exception.message}", NotificationType.WARNING)
+            return
+        }
 
-        scheduleTerminalStart(
-            tabName = nextTerminalTabName(OPEN_CODE_TAB_NAME),
-            command = launcherCommand,
-            toolName = OPEN_CODE_TAB_NAME,
-            inProgress = openCodeTerminalStartInProgress
-        )
+        try {
+            scheduleTerminalStart(
+                tabName = nextTerminalTabName(OPEN_CODE_TAB_NAME),
+                command = launcherCommand,
+                toolName = OPEN_CODE_TAB_NAME,
+                inProgress = openCodeTerminalStartInProgress,
+                tabContext = tabContext
+            )
+        } catch (exception: Throwable) {
+            log.error("Failed to schedule OpenCode terminal startup", exception)
+            cleanupAiTerminalLifecycle(tabContext, showDiff = false)
+            openCodeTerminalStartInProgress.set(false)
+            notify(project, "调度 OpenCode 终端启动失败：${exception.message}", NotificationType.WARNING)
+        }
     }
 
     private fun scheduleClaudeCodeTerminalStart() {
@@ -202,6 +227,7 @@ class AiTerminalBridgeService(
             }
         } catch (exception: Throwable) {
             log.error("Failed to install Claude hooks", exception)
+            AiTurnHookInstaller(project).cleanupLauncherScripts(tabId)
             claudeCodeTerminalStartInProgress.set(false)
             notify(project, "安装 Claude Code Hooks 失败：${exception.message}", NotificationType.WARNING)
             return
@@ -215,19 +241,44 @@ class AiTerminalBridgeService(
             workingDirectory = Path.of(workingDirectory),
             createdAtMillis = System.currentTimeMillis()
         )
-        project.service<AiTurnMonitorService>().registerTab(tabContext)
+        activeAiTerminalContexts[tabId] = tabContext
+        try {
+            project.service<AiTurnMonitorService>().registerTab(tabContext)
+        } catch (exception: Throwable) {
+            log.error("Failed to register Claude Code terminal lifecycle", exception)
+            cleanupAiTerminalLifecycle(tabContext, showDiff = false)
+            claudeCodeTerminalStartInProgress.set(false)
+            notify(project, "注册 Claude Code 终端状态失败：${exception.message}", NotificationType.WARNING)
+            return
+        }
 
-        scheduleTerminalStart(
-            tabName = nextTerminalTabName(CLAUDE_CODE_TAB_NAME),
-            command = launcherCommand,
-            toolName = CLAUDE_CODE_TAB_NAME,
-            inProgress = claudeCodeTerminalStartInProgress
-        )
+        try {
+            scheduleTerminalStart(
+                tabName = nextTerminalTabName(CLAUDE_CODE_TAB_NAME),
+                command = launcherCommand,
+                toolName = CLAUDE_CODE_TAB_NAME,
+                inProgress = claudeCodeTerminalStartInProgress,
+                tabContext = tabContext
+            )
+        } catch (exception: Throwable) {
+            log.error("Failed to schedule Claude Code terminal startup", exception)
+            cleanupAiTerminalLifecycle(tabContext, showDiff = false)
+            claudeCodeTerminalStartInProgress.set(false)
+            notify(project, "调度 Claude Code 终端启动失败：${exception.message}", NotificationType.WARNING)
+        }
     }
 
-    private fun scheduleTerminalStart(tabName: String, command: String, toolName: String, inProgress: AtomicBoolean) {
+    /** 将同一 tab 上下文贯穿三条终端启动路径，任何最终失败都进入统一释放流程。 */
+    private fun scheduleTerminalStart(
+        tabName: String,
+        command: String,
+        toolName: String,
+        inProgress: AtomicBoolean,
+        tabContext: AiTerminalTabContext
+    ) {
         ApplicationManager.getApplication().invokeLater {
             if (project.isDisposed) {
+                cleanupAiTerminalLifecycle(tabContext, showDiff = false)
                 inProgress.set(false)
                 return@invokeLater
             }
@@ -235,33 +286,52 @@ class AiTerminalBridgeService(
             val terminalToolWindowManager = TerminalToolWindowManager.getInstance(project)
             val toolWindow = terminalToolWindow(terminalToolWindowManager)
             if (toolWindow == null) {
+                cleanupAiTerminalLifecycle(tabContext, showDiff = false)
                 inProgress.set(false)
                 notify(project, "Terminal tool window was not found.", NotificationType.WARNING)
                 return@invokeLater
             }
 
-            toolWindow.activate(Runnable {
-                ApplicationManager.getApplication().invokeLater {
-                    try {
-                        val workingDirectory = terminalWorkingDirectory()
-                        val result = startFrontendTerminal(tabName, workingDirectory, command, toolName)
-                            ?: if (shouldSkipLegacyReworkedTerminal(toolName)) {
-                                startClassicTerminal(tabName, workingDirectory, command, toolName)
-                            } else {
-                                startLegacyReworkedTerminal(tabName, workingDirectory, command, toolName)
-                                    ?: run {
-                                        notifyLegacyReworkedFallbackIfNeeded(toolName)
-                                        startClassicTerminal(tabName, workingDirectory, command, toolName)
-                                    }
-                            }
-                        if (result is BridgeResult.Error) {
-                            notify(project, result.message, NotificationType.WARNING)
+            try {
+                toolWindow.activate(Runnable {
+                    ApplicationManager.getApplication().invokeLater {
+                        if (project.isDisposed) {
+                            cleanupAiTerminalLifecycle(tabContext, showDiff = false)
+                            inProgress.set(false)
+                            return@invokeLater
                         }
-                    } finally {
-                        inProgress.set(false)
+
+                        try {
+                            val workingDirectory = terminalWorkingDirectory()
+                            val result = startFrontendTerminal(tabName, workingDirectory, command, toolName, tabContext)
+                                ?: if (shouldSkipLegacyReworkedTerminal(toolName)) {
+                                    startClassicTerminal(tabName, workingDirectory, command, toolName, tabContext)
+                                } else {
+                                    startLegacyReworkedTerminal(tabName, workingDirectory, command, toolName, tabContext)
+                                        ?: run {
+                                            notifyLegacyReworkedFallbackIfNeeded(toolName)
+                                            startClassicTerminal(tabName, workingDirectory, command, toolName, tabContext)
+                                        }
+                                }
+                            if (result is BridgeResult.Error) {
+                                cleanupAiTerminalLifecycle(tabContext, showDiff = false)
+                                notify(project, result.message, NotificationType.WARNING)
+                            }
+                        } catch (exception: Throwable) {
+                            log.error("Failed to start $toolName terminal", exception)
+                            cleanupAiTerminalLifecycle(tabContext, showDiff = false)
+                            notify(project, "启动 $toolName 失败：${exception.message}", NotificationType.WARNING)
+                        } finally {
+                            inProgress.set(false)
+                        }
                     }
-                }
-            }, true, true)
+                }, true, true)
+            } catch (exception: Throwable) {
+                log.error("Failed to activate Terminal tool window", exception)
+                cleanupAiTerminalLifecycle(tabContext, showDiff = false)
+                inProgress.set(false)
+                notify(project, "激活 Terminal 工具窗口失败：${exception.message}", NotificationType.WARNING)
+            }
         }
     }
 
@@ -269,50 +339,92 @@ class AiTerminalBridgeService(
         return toolName == OPEN_CODE_TAB_NAME && ideBaselineVersion() in 251..252
     }
 
-    private fun startFrontendTerminal(tabName: String, workingDirectory: String, command: String, toolName: String): BridgeResult? {
+    private fun startFrontendTerminal(
+        tabName: String,
+        workingDirectory: String,
+        command: String,
+        toolName: String,
+        tabContext: AiTerminalTabContext
+    ): BridgeResult? {
         val helper = frontendHelper ?: return null
+        val tab = try {
+            helper.createAiTerminal(tabName, workingDirectory)
+        } catch (exception: Throwable) {
+            notify(project, "新版终端不可用，改用 Classic Terminal：${exception.message}", NotificationType.WARNING)
+            return null
+        }
+
+        if (!trackAiTerminal(TargetTerminal.Frontend(tab), tabContext)) {
+            return BridgeResult.Error("$toolName 终端启动已取消。")
+        }
+
         return try {
-            val tab = helper.createAiTerminal(tabName, workingDirectory)
             helper.runCommand(
                 tab,
                 command,
                 "已启动 $toolName 终端",
-                "启动 $toolName 失败"
-            ) {
-                registerAiTerminal(TargetTerminal.Frontend(tab))
-            }
+                "启动 $toolName 失败",
+                onCommandFailed = {
+                    cleanupAiTerminalLifecycle(tabContext, showDiff = false)
+                }
+            )
         } catch (exception: Throwable) {
+            aiFrontendTerminals.remove(tab)
             notify(project, "新版终端不可用，改用 Classic Terminal：${exception.message}", NotificationType.WARNING)
             null
         }
     }
 
-    private fun startLegacyReworkedTerminal(tabName: String, workingDirectory: String, command: String, toolName: String): BridgeResult? {
+    private fun startLegacyReworkedTerminal(
+        tabName: String,
+        workingDirectory: String,
+        command: String,
+        toolName: String,
+        tabContext: AiTerminalTabContext
+    ): BridgeResult? {
+        if (activeAiTerminalContexts[tabContext.tabId] !== tabContext) {
+            return BridgeResult.Error("$toolName 终端启动已取消。")
+        }
+
         return try {
             val widget = legacyReworkedTerminalHelper.createAiTerminal(tabName, workingDirectory)
                 ?: return null
+            if (!trackAiTerminal(TargetTerminal.LegacyReworked(widget), tabContext)) {
+                return BridgeResult.Error("$toolName 终端启动已取消。")
+            }
             legacyReworkedTerminalHelper.runCommand(
                 widget = widget,
                 command = command,
                 successMessage = "已启动 $toolName 终端",
                 failurePrefix = "运行 $command 失败",
-                onCommandSent = {
-                    registerAiTerminal(TargetTerminal.LegacyReworked(widget))
-                },
                 onCommandFailed = {
-                    val result = startClassicTerminal(tabName, workingDirectory, command, toolName)
+                    // Reworked 失败时只解除该终端关联，保留同一上下文供 Classic 回退使用。
+                    aiLegacyReworkedTerminals.remove(widget)
+                    val result = startClassicTerminal(tabName, workingDirectory, command, toolName, tabContext)
                     if (result is BridgeResult.Error) {
+                        cleanupAiTerminalLifecycle(tabContext, showDiff = false)
                         notify(project, result.message, NotificationType.WARNING)
                     }
                 }
             )
         } catch (exception: Throwable) {
+            aiLegacyReworkedTerminals.entries.removeIf { it.value.context.tabId == tabContext.tabId }
             notify(project, "Reworked Terminal 不可用，改用 Classic Terminal：${exception.message}", NotificationType.WARNING)
             null
         }
     }
 
-    private fun startClassicTerminal(tabName: String, workingDirectory: String, command: String, toolName: String): BridgeResult {
+    private fun startClassicTerminal(
+        tabName: String,
+        workingDirectory: String,
+        command: String,
+        toolName: String,
+        tabContext: AiTerminalTabContext
+    ): BridgeResult {
+        if (activeAiTerminalContexts[tabContext.tabId] !== tabContext) {
+            return BridgeResult.Error("$toolName 终端启动已取消。")
+        }
+
         val terminalToolWindowManager = TerminalToolWindowManager.getInstance(project)
         val toolWindow = terminalToolWindow(terminalToolWindowManager)
             ?: return BridgeResult.Error("Terminal tool window was not found.")
@@ -327,18 +439,31 @@ class AiTerminalBridgeService(
             return BridgeResult.Error("Failed to create $toolName Terminal: ${exception.message}")
         }
 
-        val content = terminalToolWindowManager.newTab(toolWindow, widget)
+        val content = try {
+            terminalToolWindowManager.newTab(toolWindow, widget)
+        } catch (exception: Throwable) {
+            Disposer.dispose(startupDisposable)
+            return BridgeResult.Error("Failed to create $toolName Terminal tab: ${exception.message}")
+        }
+        if (!trackAiTerminal(TargetTerminal.Classic(widget), tabContext, startupDisposable)) {
+            return BridgeResult.Error("$toolName 终端启动已取消。")
+        }
         content.displayName = tabName
-        toolWindow.activate(Runnable {
-            try {
-                ShellTerminalWidget.toShellJediTermWidgetOrThrow(widget).executeCommand(command)
-                registerAiTerminal(TargetTerminal.Classic(widget))
-                notify(project, "已启动 $toolName 终端", NotificationType.INFORMATION)
-            } catch (exception: Throwable) {
-                notify(project, "Failed to run $command: ${exception.message}", NotificationType.WARNING)
-            }
-        }, true, true)
-        return BridgeResult.Scheduled
+
+        return try {
+            toolWindow.activate(Runnable {
+                try {
+                    ShellTerminalWidget.toShellJediTermWidgetOrThrow(widget).executeCommand(command)
+                    notify(project, "已启动 $toolName 终端", NotificationType.INFORMATION)
+                } catch (exception: Throwable) {
+                    cleanupAiTerminalLifecycle(tabContext, showDiff = false)
+                    notify(project, "Failed to run $command: ${exception.message}", NotificationType.WARNING)
+                }
+            }, true, true)
+            BridgeResult.Scheduled
+        } catch (exception: Throwable) {
+            BridgeResult.Error("Failed to activate $toolName Terminal: ${exception.message}")
+        }
     }
 
     private fun pathPayload(file: VirtualFile): String {
@@ -422,43 +547,73 @@ class AiTerminalBridgeService(
         }
     }
 
-    private fun registerAiTerminal(terminal: TargetTerminal) {
+    /** 在异步发送启动命令前绑定终端对象，确保用户立即关闭标签时也能找到 tabId。 */
+    private fun trackAiTerminal(
+        terminal: TargetTerminal,
+        context: AiTerminalTabContext,
+        terminalDisposable: Disposable? = null
+    ): Boolean {
+        if (activeAiTerminalContexts[context.tabId] !== context) {
+            terminalDisposable?.let { Disposer.dispose(it) }
+            return false
+        }
+
+        val registration = AiTerminalRegistration(context, terminalDisposable)
         when (terminal) {
-            is TargetTerminal.Classic -> aiClassicTerminals += terminal.widget
-            is TargetTerminal.LegacyReworked -> aiLegacyReworkedTerminals += terminal.widget
-            is TargetTerminal.Frontend -> aiFrontendTerminals += terminal.tab
+            is TargetTerminal.Classic -> aiClassicTerminals[terminal.widget] = registration
+            is TargetTerminal.LegacyReworked -> aiLegacyReworkedTerminals[terminal.widget] = registration
+            is TargetTerminal.Frontend -> aiFrontendTerminals[terminal.tab] = registration
         }
         project.service<AiTerminalDropService>().refreshDropTarget()
+        return true
+    }
+
+    /**
+     * 幂等释放一个 AI 终端的全部生命周期资源。
+     * 只有成功移除活动上下文的调用方可以继续撤销 token、Turn 和 launcher。
+     */
+    private fun cleanupAiTerminalLifecycle(context: AiTerminalTabContext, showDiff: Boolean) {
+        if (!activeAiTerminalContexts.remove(context.tabId, context)) {
+            return
+        }
+
+        // 先解除所有终端对象关联，防止关闭、失败回调和项目销毁重复进入清理。
+        val terminalDisposables = aiClassicTerminals.values
+            .filter { registration -> registration.context.tabId == context.tabId }
+            .mapNotNull { registration -> registration.terminalDisposable }
+        aiFrontendTerminals.entries.removeIf { it.value.context.tabId == context.tabId }
+        aiLegacyReworkedTerminals.entries.removeIf { it.value.context.tabId == context.tabId }
+        aiClassicTerminals.entries.removeIf { it.value.context.tabId == context.tabId }
+
+        // 先撤销服务端认可的 tabId/token，再处理本地文件和终端 Disposable。
+        if (!project.isDisposed) {
+            try {
+                project.service<AiTurnMonitorService>().unregisterTab(context.tabId, showDiff)
+            } catch (exception: Throwable) {
+                log.warn("Failed to unregister AI terminal tab ${context.tabId}", exception)
+            }
+        }
+
+        // launcher 只包含当前 tab 的鉴权信息，共享 hooks/plugin 配置继续保留。
+        when (context.tool) {
+            AiTool.OPENCODE -> AiTurnOpenCodeInstaller(project).cleanupLauncherScripts(context.tabId)
+            AiTool.CLAUDE_CODE -> AiTurnHookInstaller(project).cleanupLauncherScripts(context.tabId)
+        }
+        terminalDisposables.forEach { disposable ->
+            try {
+                Disposer.dispose(disposable)
+            } catch (exception: Throwable) {
+                log.warn("Failed to dispose Classic terminal resources for ${context.tabId}", exception)
+            }
+        }
+        log.info("Cleaned AI terminal lifecycle: ${context.tabId} (${context.tool})")
     }
 
     private fun isRecordedAiTerminal(terminal: TargetTerminal): Boolean {
-        pruneInvalidAiTerminalRecords()
-
         return when (terminal) {
-            is TargetTerminal.Classic -> terminal.widget in aiClassicTerminals
-            is TargetTerminal.LegacyReworked -> terminal.widget in aiLegacyReworkedTerminals
-            is TargetTerminal.Frontend -> terminal.tab in aiFrontendTerminals
-        }
-    }
-
-    private fun pruneInvalidAiTerminalRecords() {
-        val helper = frontendHelper
-        if (helper == null) {
-            aiFrontendTerminals.clear()
-        } else {
-            aiFrontendTerminals.removeAll { !helper.isTabExists(it) }
-        }
-
-        aiLegacyReworkedTerminals.removeAll { widget ->
-            !legacyReworkedTerminalHelper.isWidgetContentExists(widget)
-        }
-
-        aiClassicTerminals.removeAll { widget ->
-            try {
-                widget.ttyConnector?.isConnected != true
-            } catch (_: Throwable) {
-                true
-            }
+            is TargetTerminal.Classic -> aiClassicTerminals.containsKey(terminal.widget)
+            is TargetTerminal.LegacyReworked -> aiLegacyReworkedTerminals.containsKey(terminal.widget)
+            is TargetTerminal.Frontend -> aiFrontendTerminals.containsKey(terminal.tab)
         }
     }
 
@@ -563,6 +718,16 @@ class AiTerminalBridgeService(
         return System.getProperty("os.name", "").lowercase().contains("win")
     }
 
+    /** 项目关闭或插件卸载时仅释放资源，不再弹出新的 Diff 窗口。 */
+    override fun dispose() {
+        activeAiTerminalContexts.values
+            .toList()
+            .forEach { context -> cleanupAiTerminalLifecycle(context, showDiff = false) }
+        aiFrontendTerminals.clear()
+        aiLegacyReworkedTerminals.clear()
+        aiClassicTerminals.clear()
+    }
+
     companion object {
         private const val NOTIFICATION_GROUP_ID = "AI Terminal Tools"
         private const val OPEN_CODE_TAB_NAME = "OpenCode"
@@ -598,4 +763,10 @@ class AiTerminalBridgeService(
         data class LegacyReworked(val widget: TerminalWidget) : TargetTerminal()
         data class Frontend(val tab: Any) : TargetTerminal()
     }
+
+    /** 终端对象与监控上下文的关联；Classic 同时持有其启动 Disposable。 */
+    private data class AiTerminalRegistration(
+        val context: AiTerminalTabContext,
+        val terminalDisposable: Disposable? = null
+    )
 }

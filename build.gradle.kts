@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.q110"
-version = "0.1.4"
+version = "0.1.5"
 
 kotlin {
     jvmToolchain(17)
@@ -68,9 +68,9 @@ intellijPlatform {
         """.trimIndent()
         changeNotes = """
             <ul>
-              <li>Preserves existing Claude Code settings and hook groups when installing AI Turn Diff hooks.</li>
-              <li>Prevents duplicate AI Terminal Tools hooks when Claude Code terminals are started repeatedly.</li>
-              <li>Stops hook installation without overwriting unreadable, malformed, or incompatible settings.local.json files.</li>
+              <li>Releases per-terminal monitoring state and revokes event tokens when Frontend, Reworked, or Classic AI terminal tabs close.</li>
+              <li>Removes per-tab OpenCode and Claude Code launcher scripts after tab close, startup failure, or project disposal.</li>
+              <li>Finishes active turns on tab close while preventing late events and temporary tab moves from causing stale or incorrect lifecycle state.</li>
             </ul>
         """.trimIndent()
 

@@ -50,7 +50,8 @@ class FrontendTerminalHelper(
         command: String,
         successMessage: String,
         failurePrefix: String,
-        onCommandSent: () -> Unit = {}
+        onCommandSent: () -> Unit = {},
+        onCommandFailed: () -> Unit = {}
     ): BridgeResult {
         val content = contentOf(tab)
             ?: return BridgeResult.Error("Invalid frontend terminal tab.")
@@ -60,28 +61,36 @@ class FrontendTerminalHelper(
             ?: return BridgeResult.Error("Terminal tool window was not found.")
 
         toolWindow.activate(Runnable {
-            toolWindow.contentManager.setSelectedContentCB(content, true, true)
-                .doWhenProcessed(Runnable {
-                    val focusComponent = preferredFocusableComponent(view)
-                    if (focusComponent == null) {
+            val selectionCallback = toolWindow.contentManager.setSelectedContentCB(content, true, true)
+            selectionCallback.doWhenDone(Runnable {
+                val focusComponent = preferredFocusableComponent(view)
+                if (focusComponent == null) {
+                    AiTerminalBridgeService.notify(project, "Cannot focus the AI terminal input component.", NotificationType.WARNING)
+                    onCommandFailed()
+                    return@Runnable
+                }
+                IdeFocusManager.getInstance(project)
+                    .requestFocusInProject(focusComponent, project)
+                    .doWhenDone(Runnable {
+                        try {
+                            sendCommandToExecute(view, command)
+                            onCommandSent()
+                            AiTerminalBridgeService.notify(project, successMessage, NotificationType.INFORMATION)
+                        } catch (exception: Throwable) {
+                            AiTerminalBridgeService.notify(project, "$failurePrefix: ${exception.message}", NotificationType.WARNING)
+                            onCommandFailed()
+                        }
+                    })
+                    .doWhenRejected(Runnable {
                         AiTerminalBridgeService.notify(project, "Cannot focus the AI terminal input component.", NotificationType.WARNING)
-                        return@Runnable
-                    }
-                    IdeFocusManager.getInstance(project)
-                        .requestFocusInProject(focusComponent, project)
-                        .doWhenDone(Runnable {
-                            try {
-                                sendCommandToExecute(view, command)
-                                onCommandSent()
-                                AiTerminalBridgeService.notify(project, successMessage, NotificationType.INFORMATION)
-                            } catch (exception: Throwable) {
-                                AiTerminalBridgeService.notify(project, "$failurePrefix: ${exception.message}", NotificationType.WARNING)
-                            }
-                        })
-                        .doWhenRejected(Runnable {
-                            AiTerminalBridgeService.notify(project, "Cannot focus the AI terminal input component.", NotificationType.WARNING)
-                        })
-                })
+                        onCommandFailed()
+                    })
+            })
+            // 异步选择失败必须通知桥接服务，避免 tabId、token 和 launcher 继续残留。
+            selectionCallback.doWhenRejected(Runnable {
+                AiTerminalBridgeService.notify(project, "Cannot select the AI terminal tab.", NotificationType.WARNING)
+                onCommandFailed()
+            })
         }, true, true)
 
         return BridgeResult.Scheduled
