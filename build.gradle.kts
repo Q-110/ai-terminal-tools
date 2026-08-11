@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.q110"
-version = "0.1.5"
+version = "0.1.6"
 
 kotlin {
     jvmToolchain(17)
@@ -68,9 +68,10 @@ intellijPlatform {
         """.trimIndent()
         changeNotes = """
             <ul>
-              <li>Releases per-terminal monitoring state and revokes event tokens when Frontend, Reworked, or Classic AI terminal tabs close.</li>
-              <li>Removes per-tab OpenCode and Claude Code launcher scripts after tab close, startup failure, or project disposal.</li>
-              <li>Finishes active turns on tab close while preventing late events and temporary tab moves from causing stale or incorrect lifecycle state.</li>
+              <li>Stores the latest AI Turn Diff separately for each OpenCode or Claude Code terminal and exposes it from the Terminal more-actions menu.</li>
+              <li>Clears the corresponding Diff history when an AI terminal closes without affecting other terminal tabs.</li>
+              <li>Silences successful launches, sends, and commit message generation while retaining final failure notifications.</li>
+              <li>Logs terminal compatibility fallbacks, skipped binary files, and delayed input-settle failures instead of showing intermediate balloons.</li>
             </ul>
         """.trimIndent()
 

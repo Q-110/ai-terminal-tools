@@ -65,7 +65,9 @@
         <action
             id="AiTerminalTools.ShowLastAiTurnDiff"
             class="io.github.q110.aiterminaltools.monitor.ShowLastAiTurnDiffAction"
-            text="显示上次 AI Turn Diff"
-            description="重新打开最近一轮 AI 修改的 Diff 窗口"/>
+            text="显示当前 AI 终端的上次 Diff"
+            description="重新打开当前 AI 终端最近一轮修改的 Diff 窗口">
+            <add-to-group group-id="Terminal.ToolWindowActions" anchor="first"/>
+        </action>
     </actions>
 </idea-plugin>

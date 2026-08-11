@@ -45,7 +45,7 @@ src/main/kotlin/io/github/q110/aiterminaltools/
 │   ├── AiTurnSnapshotService.kt           # 文件修改前快照捕获
 │   ├── AiTurnDiffPresenter.kt             # 构建并展示本轮文件 Diff
 │   ├── AiTurnDiffDialog.kt                # 多文件 Diff 窗口
-│   └── ShowLastAiTurnDiffAction.kt        # 重新打开最近一次 AI Turn Diff
+│   └── ShowLastAiTurnDiffAction.kt        # 重新打开当前 AI 终端最近一次 Diff
 |
 └── settings/                              # 插件配置
     ├── AiTerminalToolsSettings.kt         # 配置持久化：存储到 ai-terminal-tools.xml
@@ -79,6 +79,8 @@ Claude Code：
 
 - Diff 内容按 `tabId` 和上游 `sessionID` 隔离。
 - 多个 OpenCode / Claude Code 终端同时运行时不会串台。
+- 每个 AI 终端按 `tabId` 独立保存最近一次可展示的 Diff，并从 Terminal“三点”菜单按当前标签重新打开。
 - 终端 Content 在异步命令发送前绑定 `tabId`；真正关闭时由桥接服务注销监控状态、撤销 token 并删除当前 tab 的 launcher。
+- 终端关闭时同步删除该 `tabId` 的 Diff 历史；关闭活动 Turn 的最终 Diff 只展示，不再写回历史。
 - 启动失败和项目销毁复用同一幂等清理流程，标签临时迁移或 Detach 不触发生命周期释放。
 - 本轮结束后由 `AiTurnDiffPresenter` 构建 Diff，并通过 `AiTurnDiffDialog` 展示。

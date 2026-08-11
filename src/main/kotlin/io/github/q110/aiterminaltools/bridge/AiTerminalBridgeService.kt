@@ -20,6 +20,7 @@ import com.intellij.terminal.ui.TerminalWidget
 import io.github.q110.aiterminaltools.filter.displayPath
 import io.github.q110.aiterminaltools.monitor.AiTerminalTabContext
 import io.github.q110.aiterminaltools.monitor.AiTool
+import io.github.q110.aiterminaltools.monitor.AiTurnDiffPresenter
 import io.github.q110.aiterminaltools.monitor.AiTurnEventServer
 import io.github.q110.aiterminaltools.monitor.AiTurnHookInstaller
 import io.github.q110.aiterminaltools.monitor.AiTurnOpenCodeInstaller
@@ -88,6 +89,21 @@ class AiTerminalBridgeService(
     fun isSelectedTerminalRecordedAiTerminal(): Boolean {
         val terminal = selectedTerminal()?.takeIf { isUsable(it) } ?: return false
         return isRecordedAiTerminal(terminal)
+    }
+
+    /** 获取当前选中 AI 终端的 tabId；终端已断开但标签仍存在时也允许查看历史 Diff。 */
+    internal fun selectedAiTerminalTabId(): String? {
+        val terminal = selectedTerminal() ?: return null
+        return when (terminal) {
+            is TargetTerminal.Classic -> aiClassicTerminals[terminal.widget]
+            is TargetTerminal.LegacyReworked -> aiLegacyReworkedTerminals[terminal.widget]
+            is TargetTerminal.Frontend -> aiFrontendTerminals[terminal.tab]
+        }?.context?.tabId
+    }
+
+    /** 判断 tabId 是否仍属于活动 AI 终端，供异步 Diff 展示阻止关闭后的状态回写。 */
+    internal fun isAiTerminalTabActive(tabId: String): Boolean {
+        return activeAiTerminalContexts.containsKey(tabId)
     }
 
     fun isRecordedAiTerminalContent(content: Content): Boolean {
@@ -576,6 +592,7 @@ class AiTerminalBridgeService(
             } catch (exception: Throwable) {
                 log.warn("Failed to unregister AI terminal tab ${context.tabId}", exception)
             }
+            project.service<AiTurnDiffPresenter>().removeLastDiff(context.tabId)
         }
 
         // launcher 只包含当前 tab 的鉴权信息，共享 hooks/plugin 配置继续保留。

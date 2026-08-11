@@ -7,11 +7,14 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
+import io.github.q110.aiterminaltools.bridge.AiTerminalBridgeService
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 @Service(Service.Level.PROJECT)
 class AiTurnDiffPresenter(
@@ -19,16 +22,15 @@ class AiTurnDiffPresenter(
 ) {
     private val log = Logger.getInstance(AiTurnDiffPresenter::class.java)
 
-    /** 最近一次完成的 turn 状态，用于 "Show Last AI Turn Diff" */
-    @Volatile
-    var lastTurn: AiTurnState? = null
-        private set
+    /** 按终端 tabId 保存最近一次可展示的 Turn，避免多个 AI 终端相互覆盖。 */
+    private val lastTurnsByTabId = ConcurrentHashMap<String, AiTurnState>()
 
     /**
-     * 展示指定 turn 中所有被修改文件的 Diff。
+     * 展示指定 Turn 中所有被修改文件的 Diff。
      * 在 EDT 中使用 IntelliJ DiffManager 弹出多文件 Diff 窗口。
+     * rememberAsLast=false 用于终端关闭时的最终展示，避免已关闭终端重新写入历史记录。
      */
-    fun showDiff(turn: AiTurnState) {
+    fun showDiff(turn: AiTurnState, rememberAsLast: Boolean = true) {
         if (turn.changedFiles.isEmpty()) {
             return
         }
@@ -42,7 +44,10 @@ class AiTurnDiffPresenter(
             }
 
             try {
-                lastTurn = turn
+                // 异步展示前再次确认终端仍处于活动状态，阻止关闭竞态恢复已清理的历史记录。
+                if (rememberAsLast && project.service<AiTerminalBridgeService>().isAiTerminalTabActive(turn.tabId)) {
+                    lastTurnsByTabId[turn.tabId] = turn
+                }
                 AiTurnDiffDialog(project, requests).show()
             } catch (exception: Throwable) {
                 log.error("Failed to show diff", exception)
@@ -51,14 +56,19 @@ class AiTurnDiffPresenter(
         }
     }
 
-    /** 重新打开上次 Diff */
-    fun showLastDiff() {
-        val turn = lastTurn
+    /** 重新打开当前 AI 终端最近一次可展示的 Diff。 */
+    fun showLastDiff(tabId: String) {
+        val turn = lastTurnsByTabId[tabId]
         if (turn == null) {
-            notify("没有可显示的 AI Turn Diff 记录。", NotificationType.INFORMATION)
+            notify("当前 AI 终端没有可显示的 Diff 记录。", NotificationType.INFORMATION)
             return
         }
         showDiff(turn)
+    }
+
+    /** 终端关闭或启动失败时删除其 Diff 历史，其他终端记录不受影响。 */
+    fun removeLastDiff(tabId: String) {
+        lastTurnsByTabId.remove(tabId)
     }
 
     private fun buildRequests(turn: AiTurnState): List<SimpleDiffRequest> {

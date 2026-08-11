@@ -38,7 +38,7 @@ class AiTurnMonitorService(
         if (turn != null && turn.changedFiles.isNotEmpty()) {
             if (showDiff) {
                 log.info("Tab $tabId unregistered with ${turn.changedFiles.size} uncommitted changes, finishing turn")
-                refreshAndShowDiff(turn)
+                refreshAndShowDiff(turn, rememberAsLast = false)
             } else {
                 log.info("Tab $tabId unregistered during project cleanup; active turn was released without showing Diff")
             }
@@ -251,7 +251,8 @@ class AiTurnMonitorService(
         }
     }
 
-    private fun refreshAndShowDiff(turn: AiTurnState) {
+    /** 刷新外部修改文件并展示 Diff；终端关闭时仅展示，不再保留为可重开的历史记录。 */
+    private fun refreshAndShowDiff(turn: AiTurnState, rememberAsLast: Boolean = true) {
         try {
             // 外部 CLI 修改文件后，先刷新 VFS，确保 Diff 读取到最新内容。
             val files = turn.changedFiles.map { it.toFile() }
@@ -260,7 +261,7 @@ class AiTurnMonitorService(
             log.warn("Failed to refresh files", exception)
         }
 
-        project.service<AiTurnDiffPresenter>().showDiff(turn)
+        project.service<AiTurnDiffPresenter>().showDiff(turn, rememberAsLast)
     }
 
     internal fun normalizePath(cwd: Path, raw: String): Path? {
