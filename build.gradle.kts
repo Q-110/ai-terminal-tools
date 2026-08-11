@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.q110"
-version = "0.1.3"
+version = "0.1.4"
 
 kotlin {
     jvmToolchain(17)
@@ -68,10 +68,9 @@ intellijPlatform {
         """.trimIndent()
         changeNotes = """
             <ul>
-              <li>Fixes AI Turn Diff opening when OpenCode only reads files.</li>
-              <li>OpenCode now records changes only for write tools such as edit, write, and apply_patch.</li>
-              <li>AI Turn Diff filters files with identical before and after content before showing the diff window.</li>
-              <li>Skips project root and directory paths to avoid unnamed entries in the diff file list.</li>
+              <li>Preserves existing Claude Code settings and hook groups when installing AI Turn Diff hooks.</li>
+              <li>Prevents duplicate AI Terminal Tools hooks when Claude Code terminals are started repeatedly.</li>
+              <li>Stops hook installation without overwriting unreadable, malformed, or incompatible settings.local.json files.</li>
             </ul>
         """.trimIndent()
 

@@ -114,7 +114,7 @@ Run/Debug Console 中的多语言错误/异常首行会显示发送图标，点�
 通过插件启动 OpenCode 或 Claude Code 后，插件会监测每一轮 AI 对话中的文件修改，并在检测到真实文件内容变化时弹出本轮修改 Diff；没有实际变化时会静默跳过。
 
 - OpenCode：启动时生成项目级 `.opencode/plugins/ai-terminal-tools.js` 和当前终端专用 launcher。
-- Claude Code：启动时生成 `.claude/settings.local.json` hooks 和当前终端专用 launcher。
+- Claude Code：启动时将 AI Turn Diff hooks 合并到 `.claude/settings.local.json` 并生成当前终端专用 launcher；已有配置和 hooks 会保留，配置异常时停止写入。
 - Diff 内容按 `tabId` 和上游 `sessionID` 隔离，多个 OpenCode / Claude Code 终端同时运行时不会串台。
 - 关闭 Diff 后，可通过 Tools → AI Terminal Tools → Show Last AI Turn Diff 重新打开最近一次结果。
 
@@ -160,6 +160,12 @@ Commit 面板工具栏会显示“生成提交信息”动作，点击后使用�
 .\gradlew.bat buildPlugin
 ```
 
+## 🆕 0.1.4 更新说明
+
+- 修复启动 Claude Code 时可能覆盖 `.claude/settings.local.json` 原有复杂字段和 hooks 的问题。
+- 重复启动 Claude Code 时仅更新本插件 hook，不会重复注册，也不会影响同事件下的用户 hook。
+- 原配置无法读取、JSON 非法或 hooks 结构不兼容时停止安装，避免破坏用户配置。
+
 ## 📚 开发者文档
 
 项目结构、终端兼容层、OpenCode plugin 和 Claude Code hooks 的实现说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
@@ -169,7 +175,7 @@ Commit 面板工具栏会显示“生成提交信息”动作，点击后使用�
 | 项目 | 值 |
 |------|-----|
 | 插件 ID | `io.github.q110.aiterminaltools` |
-| 当前版本 | `0.1.3` |
+| 当前版本 | `0.1.4` |
 | Group | `io.github.q110` |
 | Vendor | `zibo` |
 | 许可证 | [MIT License](https://opensource.org/license/mit/) |

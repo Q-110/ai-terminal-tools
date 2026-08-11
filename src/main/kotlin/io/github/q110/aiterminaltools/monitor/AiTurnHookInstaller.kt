@@ -1,6 +1,10 @@
 // Hook 安装器 — 生成 Claude Hook 配置、Hook 脚本和 Launcher 脚本
 package io.github.q110.aiterminaltools.monitor
 
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import java.nio.file.Files
@@ -147,8 +151,8 @@ class AiTurnHookInstaller(
         val existingContent = if (Files.exists(settingsFile)) {
             try {
                 Files.readString(settingsFile)
-            } catch (_: Throwable) {
-                null
+            } catch (exception: Throwable) {
+                throw IllegalStateException("无法读取现有 Claude settings.local.json，已停止写入。", exception)
             }
         } else {
             null
@@ -161,104 +165,105 @@ class AiTurnHookInstaller(
 
     /**
      * 生成 Claude settings.local.json 内容。
-     * 如果已有配置存在，保留非 hooks 字段。
+     * 如果已有配置存在，完整保留原字段和 hooks，仅更新本插件自己的 hook。
      */
     private fun generateClaudeSettingsJson(hookCommand: String, existingContent: String?): String {
-        // JSON-escape 反斜杠（Windows 路径需要 \\ → \\\\）
-        val escapedCommand = hookCommand.replace("\\", "\\\\")
+        // 结构化解析已有配置，解析失败时中止安装，避免覆盖用户原文件。
+        val root = if (existingContent == null) {
+            JsonObject()
+        } else {
+            val parsed = try {
+                JsonParser.parseString(existingContent)
+            } catch (exception: Throwable) {
+                throw IllegalStateException("现有 Claude settings.local.json 不是合法 JSON，已停止写入。", exception)
+            }
+            if (!parsed.isJsonObject) {
+                throw IllegalStateException("现有 Claude settings.local.json 顶层必须是 JSON 对象，已停止写入。")
+            }
+            parsed.asJsonObject
+        }
 
-        // 构建新的 hooks JSON
-        val hooksJson = buildString {
-            appendLine("{")
+        // 保留已有 hooks 对象中的所有事件；结构不符合 Claude 配置格式时不做破坏性替换。
+        val existingHooks = root.get("hooks")
+        val hooks = when {
+            existingHooks == null -> JsonObject().also { root.add("hooks", it) }
+            existingHooks.isJsonObject -> existingHooks.asJsonObject
+            else -> throw IllegalStateException("现有 Claude settings.local.json 的 hooks 必须是 JSON 对象，已停止写入。")
+        }
 
-            // 保留已有配置中的非 hooks 字段
-            if (existingContent != null) {
-                val nonHooksFields = extractNonHooksFields(existingContent)
-                if (nonHooksFields.isNotEmpty()) {
-                    append("  $nonHooksFields,")
-                    appendLine()
+        val hookSpecs = listOf(
+            Triple("UserPromptSubmit", null, "turn_start"),
+            Triple("PreToolUse", "Edit|Write|MultiEdit|NotebookEdit", "before_write"),
+            Triple("PostToolUse", "Edit|Write|MultiEdit|NotebookEdit", "file_changed"),
+            Triple("Stop", null, "turn_end"),
+            Triple("StopFailure", null, "turn_end_failed")
+        )
+
+        for ((eventName, matcher, eventType) in hookSpecs) {
+            val eventElement = hooks.get(eventName)
+            val eventGroups = when {
+                eventElement == null -> JsonArray()
+                eventElement.isJsonArray -> eventElement.asJsonArray
+                else -> throw IllegalStateException(
+                    "现有 Claude settings.local.json 的 hooks.$eventName 必须是数组，已停止写入。"
+                )
+            }
+            val pluginCommand = "$hookCommand $eventType"
+            val mergedGroups = JsonArray()
+
+            // 仅移除旧的同名插件命令，原有 hook 组、matcher 和其他 hook 条目全部保留。
+            for (groupElement in eventGroups) {
+                if (!groupElement.isJsonObject) {
+                    mergedGroups.add(groupElement)
+                    continue
+                }
+                val group = groupElement.asJsonObject.deepCopy()
+                val groupHooksElement = group.get("hooks")
+                if (groupHooksElement == null || !groupHooksElement.isJsonArray) {
+                    mergedGroups.add(group)
+                    continue
+                }
+                val retainedHooks = JsonArray()
+                var removedCurrentPluginHook = false
+                for (hookElement in groupHooksElement.asJsonArray) {
+                    val commandElement = if (hookElement.isJsonObject) {
+                        hookElement.asJsonObject.get("command")
+                    } else {
+                        null
+                    }
+                    val isCurrentPluginHook = commandElement != null &&
+                        commandElement.isJsonPrimitive &&
+                        commandElement.asString == pluginCommand
+                    if (isCurrentPluginHook) {
+                        removedCurrentPluginHook = true
+                    } else {
+                        retainedHooks.add(hookElement)
+                    }
+                }
+                if (!removedCurrentPluginHook) {
+                    mergedGroups.add(group)
+                } else if (retainedHooks.size() > 0) {
+                    group.add("hooks", retainedHooks)
+                    mergedGroups.add(group)
                 }
             }
 
-            appendLine("  \"hooks\": {")
-            appendLine("    \"UserPromptSubmit\": [")
-            appendLine("      {")
-            appendLine("        \"hooks\": [")
-            appendLine("          {")
-            appendLine("            \"type\": \"command\",")
-            appendLine("            \"command\": \"$escapedCommand turn_start\"")
-            appendLine("          }")
-            appendLine("        ]")
-            appendLine("      }")
-            appendLine("    ],")
-            appendLine("    \"PreToolUse\": [")
-            appendLine("      {")
-            appendLine("        \"matcher\": \"Edit|Write|MultiEdit|NotebookEdit\",")
-            appendLine("        \"hooks\": [")
-            appendLine("          {")
-            appendLine("            \"type\": \"command\",")
-            appendLine("            \"command\": \"$escapedCommand before_write\"")
-            appendLine("          }")
-            appendLine("        ]")
-            appendLine("      }")
-            appendLine("    ],")
-            appendLine("    \"PostToolUse\": [")
-            appendLine("      {")
-            appendLine("        \"matcher\": \"Edit|Write|MultiEdit|NotebookEdit\",")
-            appendLine("        \"hooks\": [")
-            appendLine("          {")
-            appendLine("            \"type\": \"command\",")
-            appendLine("            \"command\": \"$escapedCommand file_changed\"")
-            appendLine("          }")
-            appendLine("        ]")
-            appendLine("      }")
-            appendLine("    ],")
-            appendLine("    \"Stop\": [")
-            appendLine("      {")
-            appendLine("        \"hooks\": [")
-            appendLine("          {")
-            appendLine("            \"type\": \"command\",")
-            appendLine("            \"command\": \"$escapedCommand turn_end\"")
-            appendLine("          }")
-            appendLine("        ]")
-            appendLine("      }")
-            appendLine("    ],")
-            appendLine("    \"StopFailure\": [")
-            appendLine("      {")
-            appendLine("        \"hooks\": [")
-            appendLine("          {")
-            appendLine("            \"type\": \"command\",")
-            appendLine("            \"command\": \"$escapedCommand turn_end_failed\"")
-            appendLine("          }")
-            appendLine("        ]")
-            appendLine("      }")
-            appendLine("    ]")
-            appendLine("  }")
-            append("}")
-        }
-
-        return hooksJson
-    }
-
-    /**
-     * 从已有 JSON 中提取非 hooks 的顶层字段。
-     * 简单实现：查找所有 "key": value 对，排除 "hooks"。
-     */
-    private fun extractNonHooksFields(json: String): String {
-        // 简化处理：如果原始 JSON 中包含 hooks 以外的顶层字段，尝试保留
-        // 由于没有 JSON 库，这里只做简单的字符串处理
-        val fields = mutableListOf<String>()
-
-        // 匹配 "key": "value" 形式的简单字段
-        val simpleFieldPattern = Regex("""^\s*"([^"]+)"\s*:\s*("[^"]*"|true|false|\d+)\s*,?\s*$""", RegexOption.MULTILINE)
-        for (match in simpleFieldPattern.findAll(json)) {
-            val key = match.groupValues[1]
-            if (key != "hooks") {
-                fields.add("\"$key\": ${match.groupValues[2]}")
+            // 在保留内容之后追加当前插件 hook，确保重复启动不会重复注册。
+            val pluginGroup = JsonObject()
+            if (matcher != null) {
+                pluginGroup.addProperty("matcher", matcher)
             }
+            val pluginHooks = JsonArray()
+            pluginHooks.add(JsonObject().apply {
+                addProperty("type", "command")
+                addProperty("command", pluginCommand)
+            })
+            pluginGroup.add("hooks", pluginHooks)
+            mergedGroups.add(pluginGroup)
+            hooks.add(eventName, mergedGroups)
         }
 
-        return fields.joinToString(", ")
+        return GsonBuilder().setPrettyPrinting().create().toJson(root) + System.lineSeparator()
     }
 
     private fun writeLauncherScripts(
